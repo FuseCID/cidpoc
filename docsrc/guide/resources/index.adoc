@@ -1,5 +1,21 @@
 ## Resources
 
-* https://blog.jetbrains.com/teamcity/2012/04/teamcity-build-dependencies-2[TeamCity Build Dependencies,window=_blank]
-* https://blog.jetbrains.com/teamcity/2013/02/automatically-building-pull-requests-from-github-with-teamcity[Automatically Building Pull Requests from GitHub,window=_blank]
-* https://confluence.jetbrains.com/display/TCD10/Automatic+Merge[Automatic Merge,window=_blank]
+### Build Dependencies
+
+See https://blog.jetbrains.com/teamcity/2012/04/teamcity-build-dependencies-2[this,window=_blank] blog entry.
+
+### Building Pull Requests
+
+See https://blog.jetbrains.com/teamcity/2013/02/automatically-building-pull-requests-from-github-with-teamcity[this,window=_blank] blog entry.
+
+### Automatic Merge
+
+See https://confluence.jetbrains.com/display/TCD10/Automatic+Merge[this,window=_blank] docs article.
+
+### Build Chain
+
+See https://confluence.jetbrains.com/display/TCD10/Build+Chain[this,window=_blank] docs article.
+
+### GitHub Webhooks
+
+See https://blog.jetbrains.com/teamcity/2016/09/installing-github-webhooks-from-teamcity[this,window=_blank] blog entry.

@@ -424,7 +424,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <h1>Fuse CI/CD POC</h1>
 <div class="details">
 <span id="author" class="author">Thomas Diesler</span><br>
-<span id="revnumber">version 1.0.0-SNAPSHOT,</span>
+<span id="revnumber">version 1.0.0.Alpha2-SNAPSHOT,</span>
 <span id="revdate">2017-06-13</span>
 </div>
 <div id="toc" class="toc2">
@@ -435,7 +435,15 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_install_teamcity_on_ec2">1.1. Install TeamCity on EC2</a></li>
 </ul>
 </li>
-<li><a href="#_resources">2. Resources</a></li>
+<li><a href="#_resources">2. Resources</a>
+<ul class="sectlevel2">
+<li><a href="#_build_dependencies">2.1. Build Dependencies</a></li>
+<li><a href="#_building_pull_requests">2.2. Building Pull Requests</a></li>
+<li><a href="#_automatic_merge">2.3. Automatic Merge</a></li>
+<li><a href="#_build_chain">2.4. Build Chain</a></li>
+<li><a href="#_github_webhooks">2.5. GitHub Webhooks</a></li>
+</ul>
+</li>
 </ul>
 </div>
 </div>
@@ -543,25 +551,42 @@ sudo systemctl restart teamcity</pre>
 <div class="sect1">
 <h2 id="_resources">2. Resources</h2>
 <div class="sectionbody">
-<div class="ulist">
-<ul>
-<li>
-<p><a href="https://blog.jetbrains.com/teamcity/2012/04/teamcity-build-dependencies-2" target="_blank">TeamCity Build Dependencies</a></p>
-</li>
-<li>
-<p><a href="https://blog.jetbrains.com/teamcity/2013/02/automatically-building-pull-requests-from-github-with-teamcity" target="_blank">Automatically Building Pull Requests from GitHub</a></p>
-</li>
-<li>
-<p><a href="https://confluence.jetbrains.com/display/TCD10/Automatic+Merge" target="_blank">Automatic Merge</a></p>
-</li>
-</ul>
+<div class="sect2">
+<h3 id="_build_dependencies">2.1. Build Dependencies</h3>
+<div class="paragraph">
+<p>See <a href="https://blog.jetbrains.com/teamcity/2012/04/teamcity-build-dependencies-2" target="_blank">this</a> blog entry.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_building_pull_requests">2.2. Building Pull Requests</h3>
+<div class="paragraph">
+<p>See <a href="https://blog.jetbrains.com/teamcity/2013/02/automatically-building-pull-requests-from-github-with-teamcity" target="_blank">this</a> blog entry.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_automatic_merge">2.3. Automatic Merge</h3>
+<div class="paragraph">
+<p>See <a href="https://confluence.jetbrains.com/display/TCD10/Automatic+Merge" target="_blank">this</a> docs article.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_build_chain">2.4. Build Chain</h3>
+<div class="paragraph">
+<p>See <a href="https://confluence.jetbrains.com/display/TCD10/Build+Chain" target="_blank">this</a> docs article.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_github_webhooks">2.5. GitHub Webhooks</h3>
+<div class="paragraph">
+<p>See <a href="https://blog.jetbrains.com/teamcity/2016/09/installing-github-webhooks-from-teamcity" target="_blank">this</a> blog entry.</p>
+</div>
 </div>
 </div>
 </div>
 </div>
 <div id="footer">
 <div id="footer-text">
-Version 1.0.0-SNAPSHOT<br>
+Version 1.0.0.Alpha2-SNAPSHOT<br>
 </div>
 </div>
 </body>

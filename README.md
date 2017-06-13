@@ -1,7 +1,5 @@
-CI/CD proof of concept
-======================
+Fuse CI/CD POC
+==============
 
-Use cases
----------
 
-#1 Trivial A => B
+[Documentation](https://tdiesler.github.io/cidpoc)
