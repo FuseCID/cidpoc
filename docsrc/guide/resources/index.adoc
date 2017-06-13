@@ -1,0 +1,5 @@
+## Resources
+
+* https://blog.jetbrains.com/teamcity/2012/04/teamcity-build-dependencies-2[TeamCity Build Dependencies,window=_blank]
+* https://blog.jetbrains.com/teamcity/2013/02/automatically-building-pull-requests-from-github-with-teamcity[Automatically Building Pull Requests from GitHub,window=_blank]
+* https://confluence.jetbrains.com/display/TCD10/Automatic+Merge[Automatic Merge,window=_blank]

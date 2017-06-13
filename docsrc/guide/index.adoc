@@ -1,0 +1,18 @@
+= Fuse CI/CD POC
+Thomas Diesler
+:revnumber: {version}
+:revdate: {localdate}
+:toc: left
+:icons: font
+:imagesdir: images
+:linkattrs:
+:sectnums:
+:last-update-label!:
+
+(C) 2016 The original authors.
+
+A CI/CD proof of concept for Fuse projects.
+
+include::start/index.adoc[]
+
+include::resources/index.adoc[]
