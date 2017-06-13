@@ -429,22 +429,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
-<ul class="sectlevel1">
-<li><a href="#_getting_started">1. Getting Started</a>
-<ul class="sectlevel2">
-<li><a href="#_install_teamcity_on_ec2">1.1. Install TeamCity on EC2</a></li>
-</ul>
-</li>
-<li><a href="#_resources">2. Resources</a>
-<ul class="sectlevel2">
-<li><a href="#_build_dependencies">2.1. Build Dependencies</a></li>
-<li><a href="#_building_pull_requests">2.2. Building Pull Requests</a></li>
-<li><a href="#_automatic_merge">2.3. Automatic Merge</a></li>
-<li><a href="#_build_chain">2.4. Build Chain</a></li>
-<li><a href="#_github_webhooks">2.5. GitHub Webhooks</a></li>
-</ul>
-</li>
-</ul>
+
 </div>
 </div>
 <div id="content">
@@ -456,130 +441,8 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div class="paragraph">
 <p>A CI/CD proof of concept for Fuse projects.</p>
 </div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_getting_started">1. Getting Started</h2>
-<div class="sectionbody">
 <div class="paragraph">
-<p>This chapter introduces the the main use cases for this proof of concept.</p>
-</div>
-<div class="sect2">
-<h3 id="_install_teamcity_on_ec2">1.1. Install TeamCity on EC2</h3>
-<h4 id="_update_installed_packages" class="discrete">Update installed Packages</h4>
-<div class="literalblock">
-<div class="content">
-<pre>sudo yum update -y
-sudo yum install -y wget git</pre>
-</div>
-</div>
-<h4 id="_install_oracle_jdk" class="discrete">Install Oracle JDK</h4>
-<div class="literalblock">
-<div class="content">
-<pre class="nowrap">wget --no-cookies \
---no-check-certificate \
---header "Cookie: oraclelicense=accept-securebackup-cookie" \
-http://download.oracle.com/otn-pub/java/jdk/8u131-b11/d54c1d3a095b4ff2b6607d096fa80163/jdk-8u131-linux-x64.rpm</pre>
-</div>
-</div>
-<div class="literalblock">
-<div class="content">
-<pre>sudo rpm -ivh jdk-8u131-linux-x64.rpm
-java -version</pre>
-</div>
-</div>
-<h4 id="_install_maven" class="discrete">Install Maven</h4>
-<div class="literalblock">
-<div class="content">
-<pre class="nowrap">wget http://mirror.synyx.de/apache/maven/maven-3/3.5.0/binaries/apache-maven-3.5.0-bin.tar.gz</pre>
-</div>
-</div>
-<div class="literalblock">
-<div class="content">
-<pre>sudo mkdir /usr/local/java
-sudo tar xzf apache-maven-3.5.0-bin.tar.gz -C /usr/local/java
-sudo ln -s /usr/local/java/apache-maven-3.5.0 /usr/local/java/apache-maven
-sudo ln -s /usr/local/java/apache-maven/bin/mvn /usr/local/bin/mvn
-mvn --version</pre>
-</div>
-</div>
-<h4 id="_install_teamcity" class="discrete">Install TeamCity</h4>
-<div class="literalblock">
-<div class="content">
-<pre class="nowrap">wget https://download.jetbrains.com/teamcity/TeamCity-2017.1.2.tar.gz
-sudo tar xzf TeamCity-2017.1.2.tar.gz -C /usr/local/java</pre>
-</div>
-</div>
-<div class="literalblock">
-<div class="content">
-<pre>sudo adduser teamcity
-sudo chown -R teamcity:teamcity /usr/local/java/TeamCity</pre>
-</div>
-</div>
-<h4 id="_install_teamcity_service" class="discrete">Install TeamCity Service</h4>
-<div class="literalblock">
-<div class="content">
-<pre class="nowrap">sudo wget https://gist.githubusercontent.com/tdiesler/853b241ea7937f79d72b1d9c9addcd5a/raw/9e91cd904618232a0b3750fa48a18c2c9a53ddef/teamcity.service \
--O /usr/lib/systemd/system/teamcity.service</pre>
-</div>
-</div>
-<div class="literalblock">
-<div class="content">
-<pre>sudo systemctl daemon-reload
-sudo systemctl enable teamcity
-sudo systemctl start teamcity</pre>
-</div>
-</div>
-<h4 id="_setup_via_web_ui" class="discrete">Setup via Web UI</h4>
-<div class="paragraph">
-<p><a href="http://52.214.125.98:8111" class="bare">http://52.214.125.98:8111</a></p>
-</div>
-<h4 id="_install_teamcity_github_plugin" class="discrete">Install TeamCity GitHub Plugin</h4>
-<div class="paragraph">
-<p>Taken from <a href="https://blog.jetbrains.com/teamcity/2013/02/automatically-building-pull-requests-from-github-with-teamcity">Automatically Building Pull Requests from GitHub</a>.</p>
-</div>
-<div class="literalblock">
-<div class="content">
-<pre class="nowrap">wget http://teamcity.jetbrains.com/guestAuth/repository/download/bt398/lastest.lastSuccessful/teamcity.github.zip
-sudo cp teamcity.github.zip /usr//local/java/TeamCity/.BuildServer/plugins
-sudo systemctl restart teamcity</pre>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_resources">2. Resources</h2>
-<div class="sectionbody">
-<div class="sect2">
-<h3 id="_build_dependencies">2.1. Build Dependencies</h3>
-<div class="paragraph">
-<p>See <a href="https://blog.jetbrains.com/teamcity/2012/04/teamcity-build-dependencies-2" target="_blank">this</a> blog entry.</p>
-</div>
-</div>
-<div class="sect2">
-<h3 id="_building_pull_requests">2.2. Building Pull Requests</h3>
-<div class="paragraph">
-<p>See <a href="https://blog.jetbrains.com/teamcity/2013/02/automatically-building-pull-requests-from-github-with-teamcity" target="_blank">this</a> blog entry.</p>
-</div>
-</div>
-<div class="sect2">
-<h3 id="_automatic_merge">2.3. Automatic Merge</h3>
-<div class="paragraph">
-<p>See <a href="https://confluence.jetbrains.com/display/TCD10/Automatic+Merge" target="_blank">this</a> docs article.</p>
-</div>
-</div>
-<div class="sect2">
-<h3 id="_build_chain">2.4. Build Chain</h3>
-<div class="paragraph">
-<p>See <a href="https://confluence.jetbrains.com/display/TCD10/Build+Chain" target="_blank">this</a> docs article.</p>
-</div>
-</div>
-<div class="sect2">
-<h3 id="_github_webhooks">2.5. GitHub Webhooks</h3>
-<div class="paragraph">
-<p>See <a href="https://blog.jetbrains.com/teamcity/2016/09/installing-github-webhooks-from-teamcity" target="_blank">this</a> blog entry.</p>
-</div>
+<p>Documentation is currently maintained in the <a href="https://github.com/tdiesler/cidpoc/wiki">wiki</a></p>
 </div>
 </div>
 </div>

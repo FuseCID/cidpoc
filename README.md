@@ -2,4 +2,4 @@ Fuse CI/CD POC
 ==============
 
 
-[Documentation](https://tdiesler.github.io/cidpoc)
+* [Wiki](https://github.com/tdiesler/cidpoc/wiki)

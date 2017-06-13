@@ -13,6 +13,4 @@ Thomas Diesler
 
 A CI/CD proof of concept for Fuse projects.
 
-include::start/index.adoc[]
-
-include::resources/index.adoc[]
+Documentation is currently maintained in the https://github.com/tdiesler/cidpoc/wiki[wiki]
