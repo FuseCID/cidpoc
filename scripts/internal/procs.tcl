@@ -148,6 +148,12 @@ proc pomUpdate { proj } {
     }
 }
 
+proc tcRest { path } {
+    set tcUrl "http://teamcity:8111"
+    dict set restcfg auth { basic restuser restpass }
+    return [rest::get $tcUrl$path "" $restcfg ]
+}
+
 proc strip { value strip } {
     set idx [expr [string last $strip $value] - 1]
     return [string range $value 0 $idx]
