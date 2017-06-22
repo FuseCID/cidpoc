@@ -3,7 +3,7 @@
 
 package require json
 
-if { $argc != 3 } {
+if { $argc < 3 } {
     puts "Usage:"
     puts "  $argv0 vcsrootUrl buildBranch oauthToken\n"
     puts "  e.g. $argv0 %vcsroot.url% %teamcity.build.branch% %github.oauth.token%"
