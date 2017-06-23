@@ -4,7 +4,7 @@
     <parent>
         <groupId>org.jboss.cidpoc</groupId>
         <artifactId>cidpoc</artifactId>
-        <version>1.0.0.Alpha2-SNAPSHOT</version>
+        <version>1.0.0.Beta1</version>
     </parent>
     
     <artifactId>cidpoc-parent</artifactId>
