@@ -153,7 +153,7 @@ proc gitCommit { message } {
 }
 
 proc gitCreateTag { branch } {
-    set value [pomValue "/project/version"]
+    set value [pomValue {mvn:version}]
     set tagName [strip $value "-SNAPSHOT"]
     set nextVersion "[nextVersion $tagName]-SNAPSHOT"
     mvnRelease $tagName $nextVersion
@@ -201,12 +201,14 @@ proc nextVersion { version } {
 }
 
 proc pomValue { path } {
-    catch { exec xpath "pom.xml" $path 2> /dev/null } node
-    set elname [lindex [split $path '/'] end]
-    set start "<$elname>"
-    set end "</$elname>"
-    set idx [expr [string last $end $node] - 1]
-    return [string range $node [string length $start] $idx]
+    set fid [open pom.xml]
+    set xml [read $fid]
+    close $fid
+    set doc [dom parse $xml]
+    set root [$doc documentElement]
+    set node [$root selectNodes -namespaces {mvn http://maven.apache.org/POM/4.0.0} $path]
+	puts $node
+    return [$node text]
 }
 
 proc pomUpdate { pomKey pomVal nextVal } {
