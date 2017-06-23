@@ -6,8 +6,6 @@
 package require rest
 package require json
 
-set TC_URL "http://teamcity:8111"
-
 proc configMain { argc argv } {
 
     if { $argc != 1 } {
@@ -107,9 +105,9 @@ proc selectRootUrl { vcsRootId } {
 }
 
 proc teamcityGET { path } {
-    variable TC_URL
+    set serverUrl [expr {[info exists env(TEAMCITY_SERVER_URL)] ? $env(TEAMCITY_SERVER_URL) : "http://teamcity:8111"}]
     dict set config auth { basic restuser restpass }
-    return [rest::get $TC_URL$path "" $config ]
+    return [rest::get $serverUrl$path "" $config ]
 }
 
 # json::dict2json does not support list values
