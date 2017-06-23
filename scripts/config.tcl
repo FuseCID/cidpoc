@@ -6,11 +6,45 @@
 package require rest
 package require json
 
-set scriptDir [file dirname [info script]]
-
 set TC_URL "http://teamcity:8111"
 
-proc getConfigTree { projId } {
+proc configMain { argc argv } {
+
+    if { $argc != 1 } {
+	puts "Usage:"
+	puts "   tclsh config.tcl projId"
+	return 1
+    }
+
+    set projId [lindex $argv 0]
+    set config [configTree $projId]
+
+    #set json [json::dict2json $config]
+    set json [config2json $config]
+
+    # Create target dir
+    set scriptDir [file dirname [info script]]
+    set targetDir [file normalize $scriptDir/target]
+    file mkdir $targetDir
+
+    # Write json to file
+    set fname $targetDir/config.json
+    set fid [open $fname w]
+    puts $fid $json
+    close $fid
+
+    # Test the round trip
+    set fid [open $fname]
+    set json [read $fid]
+    set config [json::json2dict $json]
+    set json [config2json $config]
+    close $fid
+
+    puts $json
+
+}
+
+proc configTree { projId } {
 
     # Get the last successful build id
     set xml [teamcityGET /app/rest/builds?locator=project:$projId,status:SUCCESS,count:1]
@@ -19,6 +53,8 @@ proc getConfigTree { projId } {
 
     return [getBuildConfig $buildId]
 }
+
+# Private ========================
 
 proc getBuildConfig { buildId } {
 
@@ -102,35 +138,6 @@ proc config2json { dict {level 0} }  {
 # Main ========================
 
 if { [string match "*/config.tcl" $argv0] } {
-
-    if { $argc != 1 } {
-	puts "Usage:"
-	puts "   $argv0 projId"
-	return 1
-    }
-
-    set projId [lindex $argv 0]
-    set config [getConfigTree $projId]
-
-    #set json [json::dict2json $config]
-    set json [config2json $config]
-
-    # Create target dir
-    set targetDir $scriptDir/../target
-    file mkdir $targetDir
-
-    # Write json to file
-    set fname $targetDir/config.json
-    set fid [open $fname w]
-    puts $fid $json
-    close $fid
-
-    # Test the round trip
-    set fid [open $fname]
-    set json [read $fid]
-    set config [json::json2dict $json]
-    set json [config2json $config]
-    close $fid
-
-    puts $json
+    configMain $argc $argv
 }
+

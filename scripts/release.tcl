@@ -5,10 +5,40 @@
 # https://core.tcl.tk/tcllib/doc/trunk/embedded/www/tcllib/files/modules/rest/rest.html
 package require rest
 
-set scriptDir [file dirname [info script]]
-source $scriptDir/config.tcl
+proc releaseMain { argc argv } {
 
-proc release { config } {
+    set scriptDir [file dirname [info script]]
+    set targetDir [file normalize $scriptDir/target]
+    set fname $targetDir/config.json
+
+    if { $argc < 1 && [file exists $fname] } {
+	set fid [open $fname]
+	set json [read $fid]
+	set config [json::json2dict $json]
+	close $fid
+
+	releaseConfig $config
+	return
+    }
+
+    if { $argc != 1 } {
+	puts "Usage:"
+	puts "   tclsh release.tcl projId"
+	return 1
+    }
+
+    set projId [lindex $argv 0]
+    release $projId
+}
+
+proc release { projId } {
+    set config [configTree $projId]
+    releaseConfig $config
+}
+
+# Private ========================
+
+proc releaseConfig { config } {
 
     puts [config2json $config]
 
@@ -19,6 +49,8 @@ proc release { config } {
     foreach { key } [dict keys $recipe] {
 	releaseProject recipe $key
     }
+
+    puts "\nGood Bye!"
 }
 
 proc releaseProject { recipe key } {
@@ -103,9 +135,10 @@ proc gitCheckout { branch } {
 }
 
 proc gitClone { proj } {
-    variable scriptDir
     dict with proj {
-	set checkoutDir [file normalize $scriptDir/../checkout/$projId]
+	set scriptDir [file dirname [info script]]
+	set targetDir [file normalize $scriptDir/target]
+	set checkoutDir [file normalize $targetDir/checkout/$projId]
 	file mkdir $checkoutDir/..
 	file delete -force $checkoutDir
 	catch { exec git clone -b $vcsBranch $vcsUrl $checkoutDir} res
@@ -196,29 +229,10 @@ proc strip { value strip } {
 
 # Main ========================
 
-if { $argc < 1 } {
-    set targetDir $scriptDir/../target
-    set fname $targetDir/config.json
-    if { [file exists $fname] } {
-	set fid [open $fname]
-	set json [read $fid]
-	set config [json::json2dict $json]
-	close $fid
+if { [string match "*/release.tcl" $argv0] } {
 
-	release $config
-	exit 0
-    }
+    set scriptDir [file dirname [info script]]
+    source $scriptDir/config.tcl
+
+    releaseMain $argc $argv
 }
-
-if { $argc != 1 } {
-    puts "Usage:"
-    puts "   $argv0 projId"
-    return 1
-}
-
-set projId [lindex $argv 0]
-set config [getConfigTree $projId]
-
-release $config
-
-puts "\nGood Bye!"
