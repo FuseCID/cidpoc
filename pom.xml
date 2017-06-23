@@ -8,21 +8,22 @@
 
     <name>cidpoc</name>
     <description>Fuse CI/CD POC</description>
-    <url>https://github.com/tdiesler/cidpoc</url>
+    <url>https://github.com/FuseCID/cidpoc</url>
 
     <properties>
         <version-maven-release-plugin>2.5.3</version-maven-release-plugin>
     </properties>
     
     <scm>
-        <connection>scm:git:https://github.com/tdiesler/cidpoc</connection>
-        <developerConnection>scm:git:https://github.com/tdiesler/cidpoc.git</developerConnection>
-        <url>http://github.com/tdiesler/cidpoc</url>
+        <connection>scm:git:https://github.com/FuseCID/cidpoc</connection>
+        <developerConnection>scm:git:https://github.com/FuseCID/cidpoc.git</developerConnection>
+        <url>http://github.com/FuseCID/cidpoc</url>
       <tag>HEAD</tag>
   </scm>
     
     <modules>
         <module>parent</module>
+        <module>common</module>
         <module>docsrc</module>
     </modules>
     

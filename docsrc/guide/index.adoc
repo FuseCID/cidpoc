@@ -13,4 +13,4 @@ Thomas Diesler
 
 A CI/CD proof of concept for Fuse projects.
 
-Documentation is currently maintained in the https://github.com/tdiesler/cidpoc/wiki[wiki]
+Documentation is currently maintained in the https://github.com/FuseCID/cidpoc/wiki[wiki]

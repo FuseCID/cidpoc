@@ -1,6 +1,5 @@
 .project
 .classpath
 .settings
-checkout
 test.tcl
 target
