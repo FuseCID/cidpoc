@@ -1,39 +1,35 @@
 # !/usr/bin/tclsh
 #
 
-set sourceUrl "https://raw.githubusercontent.com/FuseCID/cidpoc"
-set scriptPath "/master/scripts"
-
-if { $argc < 1 } {
+if { $argc < 5 } {
     puts "Usage:"
-    puts "   $argv0 \[config|prmerge|release] args"
+    puts "   tclsh switch.tcl -baseUrl baseUrl -cmd \[config|prmerge|release] args"
+    puts "   e.g. tclsh switch.tcl -baseUrl https://raw.githubusercontent.com/FuseCID/cidpoc/master/scripts -cmd config args"
+    
     return 1
 }
 
-# Create target dir
-set scriptDir [file dirname [info script]]
-set targetDir [file normalize $scriptDir/target]
-file mkdir $targetDir
+set baseUrl [dict get $argv "-baseUrl"]
+set cmd [dict get $argv "-cmd"]
 
-exec curl -H "Cache-Control: no-cache" -o $targetDir/config.tcl $sourceUrl$scriptPath/config.tcl 2> /dev/null
-exec curl -H "Cache-Control: no-cache" -o $targetDir/prmerge.tcl $sourceUrl$scriptPath/prmerge.tcl 2> /dev/null
-exec curl -H "Cache-Control: no-cache" -o $targetDir/release.tcl $sourceUrl$scriptPath/release.tcl 2> /dev/null
-
-source $targetDir/config.tcl
-source $targetDir/prmerge.tcl
-source $targetDir/release.tcl
-
-set cmd [lindex $argv 0]
-set args [lrange $argv 1 end]
+set args [dict remove $argv "-baseUrl" "-cmd"]
 switch $cmd {
     "config" {
-	configMain [llength $args] $args
+	exec curl -H "Cache-Control: no-cache" $baseUrl/config.tcl > config.tcl 2> /dev/null
+	source config.tcl
+	configMain $args
     }
     "prmerge" {
-	prmergeMain [llength $args] $args
+	exec curl -H "Cache-Control: no-cache" $baseUrl/prmerge.tcl > prmerge.tcl 2> /dev/null
+	source prmerge.tcl
+	prmergeMain $args
     }
     "release" {
-	releaseMain [llength $args] $args
+	exec curl -H "Cache-Control: no-cache" $baseUrl/config.tcl > config.tcl 2> /dev/null
+	exec curl -H "Cache-Control: no-cache" $baseUrl/release.tcl > release.tcl 2> /dev/null
+	source config.tcl
+	source release.tcl
+	releaseMain $args
     }
     default {
 	puts "Unknown command: $cmd"

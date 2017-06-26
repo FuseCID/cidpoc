@@ -5,45 +5,37 @@
 # https://core.tcl.tk/tcllib/doc/trunk/embedded/www/tcllib/files/modules/rest/rest.html
 package require rest
 
-proc releaseMain { argc argv } {
+proc releaseMain { argv } {
 
-    set scriptDir [file dirname [info script]]
-    set targetDir [file normalize $scriptDir/target]
-    set fname $targetDir/config.json
+    if { [llength $argv] < 2 } {
+	puts "Usage:"
+	puts "  tclsh release.tcl [-buildType buildType|-buildId buildId|-json path] [-host host] [-user user] [-oauth token]"
+	puts "  e.g. tclsh release.tcl -proj ProjCNext -host http://52.214.125.98:8111 -user fuse-cid -oauth 5810305a47"
+	puts "  e.g. tclsh release.tcl -proj %teamcity.project.id% -host %teamcity.serverUrl% -user %cid.github.username% -oauth %cid.github.oauth.token%"
+	return 1
+    }
 
-    if { $argc < 1 && [file exists $fname] } {
+    if { [dict exists $argv "-json"] } {
+	set fname [dict get $argv "-json"]
 	set fid [open $fname]
 	set json [read $fid]
 	set config [json::json2dict $json]
 	close $fid
-
-	releaseConfig $config
-	return
+    } else {
+	set config [configTree]
     }
 
-    if { $argc != 1 } {
-	puts "Usage:"
-	puts "   tclsh release.tcl projId"
-	return 1
+    release $config
+}
+
+proc release { config } {
+
+    if { ![verifyConfig $config] } {
+	exit 1
     }
-
-    set projId [lindex $argv 0]
-    release $projId
-}
-
-proc release { projId } {
-    set config [configTree $projId]
-    releaseConfig $config
-}
-
-# Private ========================
-
-proc releaseConfig { config } {
-
-    puts [config2json $config]
-
+	
     # Get a flat orderd list of configs
-    set recipe [flatConfig $config [dict create]]
+    set recipe [flattenConfig $config ]
 
     puts "\nProcessing projects: [dict keys $recipe]"
     foreach { key } [dict keys $recipe] {
@@ -53,6 +45,8 @@ proc releaseConfig { config } {
     puts "\nGood Bye!"
 }
 
+# Private ========================
+
 proc releaseProject { recipe key } {
     upvar $recipe recipeRef
 
@@ -60,48 +54,50 @@ proc releaseProject { recipe key } {
     dict with proj {
 	puts "\nProcessing project: $projId"
 
-	# Clone the project
-	cd [gitClone $proj]
+	# Checkout the project
+	gitCheckout $projId $vcsUrl $vcsBranch
+	gitVerifyHeadRevision $projId $vcsBranch $vcsCommit
 
 	# Check the last commit message
 	set subject [exec git log --max-count=1 --pretty=%s $vcsBranch]
 	set lastCommitIsOurs [string match {\[fuse-cid]*} $subject]
+	set useLastAvailableTag [expr { $lastCommitIsOurs || {[maven-release-plugin] prepare for next development iteration} eq $subject }]
 
 	# Get or create project tag
-	if { $lastCommitIsOurs || {[maven-release-plugin] prepare for next development iteration} eq $subject } {
+	if { $useLastAvailableTag } {
 	    set tagName [gitLastAvailableTag $vcsBranch]
 	} else {
 	    # Update the dependencies in POM with tagged versions
-	    if { [llength [dict get $proj "snapdeps"]] > 0 } {
-		set mapping [dict get $proj "pomMapping"]
-		foreach { depId } [dict get $proj "snapdeps"] {
-		    set pomKey [dict get $mapping $depId]
-		    set pomVal [pomValue /project/properties/$pomKey]
-		    set tagName [dict get $recipeRef $depId "tagName"]
-		    pomUpdate $pomKey $pomVal $tagName
-		}
+	    foreach { depId } $dependencies {
+		set pomKey [lindex [dict get $pomProps $depId] 0]
+		set pomVal [lindex [dict get $pomProps $depId] 1]
+		set depTag [dict get $recipeRef $depId "tagName"]
+		pomUpdate $pomKey $pomVal $depTag
 	    }
-	    set tagName [gitCreateTag $vcsBranch]
+	    set tagName [gitCreateTag [strip $pomVersion "-SNAPSHOT"]]
 	}
 
 	# Store the tagName in the config
 	set proj [dict set proj tagName $tagName]
 	dict set recipeRef $key $proj
 
-	# Merge the current branch into the target branch
-	if { !$lastCommitIsOurs && $vcsBranch ne $vcsTargetBranch } {
-	    gitMerge $vcsTargetBranch $vcsBranch
-	    gitPush $vcsTargetBranch origin
+	if { !$useLastAvailableTag } {
 
 	    # Update the dependencies in POM with next versions
-	    gitCheckout $vcsBranch
-	    set mapping [dict get $proj "pomMapping"]
-	    foreach { depId } [dict get $proj "snapdeps"] {
-		set pomKey [dict get $mapping $depId]
-		set pomVal [pomValue /project/properties/$pomKey]
-		pomUpdate $pomKey $pomVal "[nextVersion $pomVal]-SNAPSHOT"
+	    foreach { depId } $dependencies {
+		set pomKey [lindex [dict get $pomProps $depId] 0]
+		set pomVal [dict get $recipeRef $depId "tagName"]
+		set pomNextVal "[nextVersion $pomVal]-SNAPSHOT"
+		pomUpdate $pomKey $pomVal $pomNextVal
 	    }
-	    gitPush $vcsBranch origin
+
+	    # Push modified branch to origin
+	    gitPush $vcsBranch
+
+	    # Merge the created tag to the target branch
+	    gitCheckout $projId $vcsUrl $vcsTargetBranch
+	    execCmd "git merge --ff-only $tagName"
+	    gitPush $vcsTargetBranch
 	}
     }
 }
@@ -112,38 +108,14 @@ proc isPrepareForNext { branch } {
     return [string equal $subject $expected]
 }
 
-proc execCmd { cmd } {
+proc execCmd { cmd {ignoreError 0} } {
     puts $cmd
-    return [eval exec [split $cmd]]
-}
-
-proc flatConfig { config result } {
-    set projId [dict get $config "projId"]
-    if { [dict exists $result $projId] == 0 } {
-	set depids [list]
-	foreach { snap } [dict get $config "snapdeps"] {
-	    lappend depids [dict get $snap "projId"]
-	    set result [flatConfig $snap $result]
-	}
-	dict append result $projId [dict replace $config "snapdeps" $depids]
-    }
-    return $result
-}
-
-proc gitCheckout { branch } {
-    execCmd "git checkout --quiet --force $branch"
-}
-
-proc gitClone { proj } {
-    dict with proj {
-	set scriptDir [file dirname [info script]]
-	set targetDir [file normalize $scriptDir/target]
-	set checkoutDir [file normalize $targetDir/checkout/$projId]
-	file mkdir $checkoutDir/..
-	file delete -force $checkoutDir
-	catch { exec git clone -b $vcsBranch $vcsUrl $checkoutDir} res
-	puts $res
-	return $checkoutDir
+    if { $ignoreError } {
+	set retval [catch { eval exec [split $cmd] } res]
+	return $res
+    } else {
+	eval exec [split $cmd]
+	return "ok"
     }
 }
 
@@ -152,9 +124,7 @@ proc gitCommit { message } {
     exec git commit -m "\[fuse-cid] $message"
 }
 
-proc gitCreateTag { branch } {
-    set value [pomValue {mvn:version}]
-    set tagName [strip $value "-SNAPSHOT"]
+proc gitCreateTag { tagName } {
     set nextVersion "[nextVersion $tagName]-SNAPSHOT"
     mvnRelease $tagName $nextVersion
     return $tagName
@@ -166,19 +136,25 @@ proc gitLastAvailableTag { branch } {
     return $tagName
 }
 
-proc gitMerge { targetBranch currBranch } {
-    gitCheckout $targetBranch
-    execCmd "git merge --ff-only $currBranch"
+proc gitMerge { projId vcsUrl targetBranch mergeBranch } {
+    gitCheckout $projId $vcsUrl $targetBranch
+    execCmd "git merge --ff-only $mergeBranch"
 }
 
-proc gitPush { branch remote } {
-    puts "git push $remote $branch"
-    catch { exec git push $remote $branch } result
+proc gitPush { branch } {
+    puts "git push origin $branch"
+    catch { exec git push origin $branch } result
     puts $result
 }
 
-proc mvnRelease { tagName nextVersion} {
-    execCmd "mvn release:prepare -DautoVersionSubmodules=true -DreleaseVersion=$tagName -Dtag=$tagName -DdevelopmentVersion=$nextVersion"
+proc mvnRelease { tagName nextVersion } {
+    variable argv
+    set prepare "release:prepare"
+    if { [dict exists $argv "-user"] } {
+	lappend prepare "-Dusername=[dict get $argv -user]" "-Dpassword=[dict get $argv -oauth]"
+    }
+    puts "mvn release:prepare -DreleaseVersion=$tagName -Dtag=$tagName -DdevelopmentVersion=$nextVersion"
+    exec mvn $prepare -DautoVersionSubmodules=true {-DscmCommentPrefix=[fuse-cid] } -DreleaseVersion=$tagName -Dtag=$tagName -DdevelopmentVersion=$nextVersion
     execCmd "mvn release:clean"
 }
 
@@ -200,18 +176,8 @@ proc nextVersion { version } {
     return "$major.$minor.$micro$patch"
 }
 
-proc pomValue { path } {
-    set fid [open pom.xml]
-    set xml [read $fid]
-    close $fid
-    set doc [dom parse $xml]
-    set root [$doc documentElement]
-    set node [$root selectNodes -namespaces {mvn http://maven.apache.org/POM/4.0.0} $path]
-	puts $node
-    return [$node text]
-}
-
 proc pomUpdate { pomKey pomVal nextVal } {
+    if { ![file exists pom.xml] } { error "Cannot find [pwd]/pom.xml" }
     set message "Replace $pomKey $pomVal with $nextVal"
     exec sed -i "" "s#<$pomKey>$pomVal</$pomKey>#<$pomKey>$nextVal</$pomKey>#" pom.xml
     exec git add pom.xml
@@ -236,5 +202,5 @@ if { [string match "*/release.tcl" $argv0] } {
     set scriptDir [file dirname [info script]]
     source $scriptDir/config.tcl
 
-    releaseMain $argc $argv
+    releaseMain $argv
 }
