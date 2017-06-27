@@ -9,9 +9,9 @@ proc releaseMain { argv } {
 
     if { [llength $argv] < 2 } {
 	puts "Usage:"
-	puts "  tclsh release.tcl [-buildType buildType|-buildId buildId|-json path] [-host host] [-user user] [-oauth token]"
-	puts "  e.g. tclsh release.tcl -proj ProjCNext -host http://52.214.125.98:8111 -user fuse-cid -oauth 5810305a47"
-	puts "  e.g. tclsh release.tcl -proj %teamcity.project.id% -host %teamcity.serverUrl% -user %cid.github.username% -oauth %cid.github.oauth.token%"
+	puts "  tclsh release.tcl [-buildType buildType|-buildId buildId|-json path] [-host host]"
+	puts "  e.g. tclsh release.tcl -proj ProjCNext -host http://52.214.125.98:8111"
+	puts "  e.g. tclsh release.tcl -proj %teamcity.project.id% -host %teamcity.serverUrl%"
 	return 1
     }
 
@@ -33,7 +33,7 @@ proc release { config } {
     if { ![verifyConfig $config] } {
 	exit 1
     }
-	
+
     # Get a flat orderd list of configs
     set recipe [flattenConfig $config ]
 
@@ -89,8 +89,15 @@ proc releaseProject { recipe key } {
 	set proj [dict set proj tagName $tagName]
 	dict set recipeRef $key $proj
 
-	if { !$useLastAvailableTag } {
+	if { !$useLastAvailableTag && $vcsTargetBranch ne $vcsBranch } {
 
+	    # Merge the created tag to the target branch
+	    gitMerge $projId $vcsUrl $vcsTargetBranch $vcsBranch
+	    gitPush $vcsTargetBranch
+
+	    # Use a simple checkout back 
+	    catch { exec git checkout $vcsBranch }
+		
 	    # Update the dependencies in POM with next versions
 	    foreach { depId } $dependencies {
 		set pomKey [lindex [dict get $pomProps $depId] 0]
@@ -98,14 +105,7 @@ proc releaseProject { recipe key } {
 		set pomNextVal "[nextVersion $pomVal]-SNAPSHOT"
 		pomUpdate $pomKey $pomVal $pomNextVal
 	    }
-
-	    # Push modified branch to origin
 	    gitPush $vcsBranch
-
-	    # Merge the created tag to the target branch
-	    gitCheckout $projId $vcsUrl $vcsTargetBranch
-	    execCmd "git merge --ff-only $tagName"
-	    gitPush $vcsTargetBranch
 	}
     }
 }
@@ -116,15 +116,9 @@ proc isPrepareForNext { branch } {
     return [string equal $subject $expected]
 }
 
-proc execCmd { cmd {ignoreError 0} } {
+proc execCmd { cmd } {
     puts $cmd
-    if { $ignoreError } {
-	set retval [catch { eval exec [split $cmd] } res]
-	return $res
-    } else {
-	eval exec [split $cmd]
-	return "ok"
-    }
+    eval exec [split $cmd]
 }
 
 proc gitCommit { message } {
@@ -151,18 +145,21 @@ proc gitMerge { projId vcsUrl targetBranch mergeBranch } {
 
 proc gitPush { branch } {
     puts "git push origin $branch"
-    catch { exec git push origin $branch } result
-    puts $result
+
+    # A successful push may still result in a non-zero return
+    if { [catch { exec git push origin $branch } res] } {
+	foreach { line} [split $res "\n"] {
+	    if { [string match "error: *" $line] || [string match "fatal: *" $line]  } {
+		error $res
+	    }
+	}
+	puts $res
+    }
 }
 
 proc mvnRelease { tagName nextVersion } {
-    variable argv
-    set prepare "release:prepare"
-    if { [dict exists $argv "-user"] } {
-	lappend prepare "-Dusername=[dict get $argv -user]" "-Dpassword=[dict get $argv -oauth]"
-    }
     puts "mvn release:prepare -DreleaseVersion=$tagName -Dtag=$tagName -DdevelopmentVersion=$nextVersion"
-    exec mvn {*}$prepare -DautoVersionSubmodules=true {-DscmCommentPrefix=[fuse-cid] } -DreleaseVersion=$tagName -Dtag=$tagName -DdevelopmentVersion=$nextVersion
+    exec mvn release:prepare -DautoVersionSubmodules=true {-DscmCommentPrefix=[fuse-cid] } -DreleaseVersion=$tagName -Dtag=$tagName -DdevelopmentVersion=$nextVersion
     execCmd "mvn release:perform"
 }
 
