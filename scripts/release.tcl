@@ -63,9 +63,16 @@ proc releaseProject { recipe key } {
 	set lastCommitIsOurs [string match {\[fuse-cid]*} $subject]
 	set useLastAvailableTag [expr { $lastCommitIsOurs || {[maven-release-plugin] prepare for next development iteration} eq $subject }]
 
+	# Scan dependencies for updates
+	foreach { depId } $dependencies {
+	    set updated [dict get $recipeRef $depId "updated"]
+	    set useLastAvailableTag [expr { $useLastAvailableTag && !$updated }]
+	}
+
 	# Get or create project tag
 	if { $useLastAvailableTag } {
 	    set tagName [gitLastAvailableTag $vcsBranch]
+	    set proj [dict set proj updated "false"]
 	} else {
 	    # Update the dependencies in POM with tagged versions
 	    foreach { depId } $dependencies {
@@ -75,6 +82,7 @@ proc releaseProject { recipe key } {
 		pomUpdate $pomKey $pomVal $depTag
 	    }
 	    set tagName [gitCreateTag [strip $pomVersion "-SNAPSHOT"]]
+	    set proj [dict set proj updated "true"]
 	}
 
 	# Store the tagName in the config
@@ -154,8 +162,8 @@ proc mvnRelease { tagName nextVersion } {
 	lappend prepare "-Dusername=[dict get $argv -user]" "-Dpassword=[dict get $argv -oauth]"
     }
     puts "mvn release:prepare -DreleaseVersion=$tagName -Dtag=$tagName -DdevelopmentVersion=$nextVersion"
-    exec mvn $prepare -DautoVersionSubmodules=true {-DscmCommentPrefix=[fuse-cid] } -DreleaseVersion=$tagName -Dtag=$tagName -DdevelopmentVersion=$nextVersion
-    execCmd "mvn release:clean"
+    exec mvn {*}$prepare -DautoVersionSubmodules=true {-DscmCommentPrefix=[fuse-cid] } -DreleaseVersion=$tagName -Dtag=$tagName -DdevelopmentVersion=$nextVersion
+    execCmd "mvn release:perform"
 }
 
 proc nextVersion { version } {
@@ -177,9 +185,11 @@ proc nextVersion { version } {
 }
 
 proc pomUpdate { pomKey pomVal nextVal } {
+    variable tcl_platform
     if { ![file exists pom.xml] } { error "Cannot find [pwd]/pom.xml" }
     set message "Replace $pomKey $pomVal with $nextVal"
-    exec sed -i "" "s#<$pomKey>$pomVal</$pomKey>#<$pomKey>$nextVal</$pomKey>#" pom.xml
+    set suffix [expr { $tcl_platform(os) eq "Darwin" ? [list -i ".bak"] : "-i.bak" }]
+    exec sed $suffix "s#<$pomKey>$pomVal</$pomKey>#<$pomKey>$nextVal</$pomKey>#" pom.xml
     exec git add pom.xml
     gitCommit $message
 }
