@@ -16,26 +16,54 @@ proc releaseMain { argv } {
     }
 
     if { [dict exists $argv "-json"] } {
+
 	set fname [dict get $argv "-json"]
 	set fid [open $fname]
 	set json [read $fid]
 	set config [json::json2dict $json]
 	close $fid
-    } else {
-	set config [configTree]
-    }
 
-    release $config
+	# An explicit config must be valid
+	if { ![verifyConfig $config] } {
+	    exit 1
+	}
+	release $config false
+
+    } else {
+
+	# Release the generated config
+	release [configTree]
+
+    }
 }
 
-proc release { config } {
-
-    if { ![verifyConfig $config] } {
-	exit 1
-    }
+proc release { config {verify true} } {
 
     # Get a flat orderd list of configs
     set recipe [flattenConfig $config ]
+
+    # Verify the given config
+    if { $verify && ![verifyConfig $config] } {
+	dict for { key conf} $recipe {
+	    dict with conf {
+		set updated false
+		gitSimpleCheckout $key $vcsBranch
+		foreach { depName } $dependencies {
+		    set pomVersion [dict get $recipe $depName "pomVersion"]
+		    set propName [lindex [dict get $conf "pomProps" $depName] 0]
+		    set propVersion [lindex [dict get $conf "pomProps" $depName] 1]
+		    if { $propVersion ne $pomVersion } {
+			pomUpdate $propName $propVersion $pomVersion
+			set updated true
+		    }
+		}
+		if { $updated } {
+		    gitPush $vcsBranch
+		}
+	    }
+	}
+	exit 1
+    }
 
     puts "\nProcessing projects: [dict keys $recipe]"
     foreach { key } [dict keys $recipe] {
@@ -60,7 +88,7 @@ proc releaseProject { recipe key } {
 
 	# Check the last commit message
 	set subject [exec git log --max-count=1 --pretty=%s $vcsBranch]
-	set lastCommitIsOurs [string match {\[fuse-cid]*} $subject]
+	set lastCommitIsOurs [expr {[string match {\[fuse-cid]*} $subject] && ![string match {* Replace *-SNAPSHOT with *-SNAPSHOT} $subject]} ]
 	set useLastAvailableTag [expr { $lastCommitIsOurs || {[maven-release-plugin] prepare for next development iteration} eq $subject }]
 
 	# Scan dependencies for updates
@@ -76,10 +104,10 @@ proc releaseProject { recipe key } {
 	} else {
 	    # Update the dependencies in POM with tagged versions
 	    foreach { depId } $dependencies {
-		set pomKey [lindex [dict get $pomProps $depId] 0]
-		set pomVal [lindex [dict get $pomProps $depId] 1]
+		set propName [lindex [dict get $pomProps $depId] 0]
+		set propVersion [lindex [dict get $pomProps $depId] 1]
 		set depTag [dict get $recipeRef $depId "tagName"]
-		pomUpdate $pomKey $pomVal $depTag
+		pomUpdate $propName $propVersion $depTag
 	    }
 	    set tagName [gitCreateTag [strip $pomVersion "-SNAPSHOT"]]
 	    set proj [dict set proj updated "true"]
@@ -95,9 +123,9 @@ proc releaseProject { recipe key } {
 	    gitMerge $projId $vcsUrl $vcsTargetBranch $vcsBranch
 	    gitPush $vcsTargetBranch
 
-	    # Use a simple checkout back 
-	    catch { exec git checkout $vcsBranch }
-		
+	    # Use a simple checkout
+	    gitSimpleCheckout $projId $vcsBranch
+
 	    # Update the dependencies in POM with next versions
 	    foreach { depId } $dependencies {
 		set pomKey [lindex [dict get $pomProps $depId] 0]

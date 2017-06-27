@@ -57,7 +57,7 @@ proc configTree { } {
     return [getBuildConfig $buildId]
 }
 
-proc verifyConfig { config } {
+proc verifyConfig { config {quiet false} } {
     puts "Verifying configuration\n"
     puts [config2json $config]
 
@@ -73,12 +73,12 @@ proc verifyConfig { config } {
 		set propVersion [lindex [dict get $conf "pomProps" $depName] 1]
 		# verify that the two versions are equal
 		if { $propVersion ne $pomVersion } {
-		    lappend problems "Please make $key dependent on $depName ($pomVersion)"
+		    lappend problems "Make $key dependent on $depName ($pomVersion)"
 		}
 	    }
 	}
     }
-	
+
     if  { [llength $problems] > 0 } {
 	puts "\nThis configuration is not consistent\n"
 	foreach { prob } $problems {
@@ -87,7 +87,7 @@ proc verifyConfig { config } {
 	puts ""
 	return 0
     }
-	
+
     return 1
 }
 
@@ -180,6 +180,14 @@ proc gitCheckout { projId vcsUrl vcsBranch } {
 	catch { exec git clone -b $vcsBranch $vcsUrl $workDir } res
 	cd $workDir
     }
+    return $workDir
+}
+
+proc gitSimpleCheckout { projId vcsBranch } {
+    variable targetDir
+    set workDir [file normalize $targetDir/checkout/$projId]
+    cd $workDir
+    catch { exec git checkout $vcsBranch }
     return $workDir
 }
 
