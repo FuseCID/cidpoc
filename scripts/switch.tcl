@@ -5,14 +5,14 @@ if { $argc < 5 } {
     puts "Usage:"
     puts "   tclsh switch.tcl -baseUrl baseUrl -cmd \[config|prmerge|release] args"
     puts "   e.g. tclsh switch.tcl -baseUrl https://raw.githubusercontent.com/FuseCID/cidpoc/master/scripts -cmd config args"
-    
+
     return 1
 }
 
 set baseUrl [dict get $argv "-baseUrl"]
 set cmd [dict get $argv "-cmd"]
 
-set args [dict remove $argv "-baseUrl" "-cmd"]
+set args [dict remove $argv "-baseUrl" ]
 switch $cmd {
     "config" {
 	exec curl -H "Cache-Control: no-cache" $baseUrl/config.tcl > config.tcl 2> /dev/null
@@ -24,6 +24,13 @@ switch $cmd {
 	source prmerge.tcl
 	prmergeMain $args
     }
+    "prepare" {
+	exec curl -H "Cache-Control: no-cache" $baseUrl/config.tcl > config.tcl 2> /dev/null
+	exec curl -H "Cache-Control: no-cache" $baseUrl/release.tcl > release.tcl 2> /dev/null
+	source config.tcl
+	source release.tcl
+	prepareMain $args
+    }
     "release" {
 	exec curl -H "Cache-Control: no-cache" $baseUrl/config.tcl > config.tcl 2> /dev/null
 	exec curl -H "Cache-Control: no-cache" $baseUrl/release.tcl > release.tcl 2> /dev/null
@@ -33,5 +40,6 @@ switch $cmd {
     }
     default {
 	puts "Unknown command: $cmd"
+	exit 1
     }
 }

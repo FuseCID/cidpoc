@@ -5,13 +5,13 @@
 # https://core.tcl.tk/tcllib/doc/trunk/embedded/www/tcllib/files/modules/rest/rest.html
 package require rest
 
-proc releaseMain { argv } {
+proc prepareMain { argv } {
 
-    if { [llength $argv] < 2 } {
+    if { [llength $argv] < 4 } {
 	puts "Usage:"
-	puts "  tclsh release.tcl [-buildType buildType|-buildId buildId|-json path] [-host host]"
-	puts "  e.g. tclsh release.tcl -proj ProjCNext -host http://52.214.125.98:8111"
-	puts "  e.g. tclsh release.tcl -proj %teamcity.project.id% -host %teamcity.serverUrl%"
+	puts "  tclsh release.tcl -cmd prepare [-buildType buildType|-buildId buildId|-json path] [-host host]"
+	puts "  e.g. tclsh release.tcl -cmd prepare -buildType ProjCNext -host http://52.214.125.98:8111"
+	puts "  e.g. tclsh release.tcl -cmd prepare -buildId %teamcity.build.id% -host %teamcity.serverUrl%"
 	return 1
     }
 
@@ -24,26 +24,20 @@ proc releaseMain { argv } {
 	close $fid
 
 	# An explicit config must be valid
-	if { ![verifyConfig $config] } {
-	    exit 1
-	}
-	release $config false
-
-    } else {
-
-	# Release the generated config
-	release [configTree]
-
+	return [verifyConfig $config]
     }
+
+    # Release the generated config
+    prepare [configTree]
 }
 
-proc release { config {verify true} } {
+proc prepare { config } {
 
     # Get a flat orderd list of configs
     set recipe [flattenConfig $config ]
 
     # Verify the given config
-    if { $verify && ![verifyConfig $config] } {
+    if { ![verifyConfig $config] } {
 	dict for { key conf} $recipe {
 	    dict with conf {
 		set updated false
@@ -62,6 +56,46 @@ proc release { config {verify true} } {
 		}
 	    }
 	}
+	exit 1
+    }
+
+    puts "\nOk to proceed!"
+}
+
+proc releaseMain { argv } {
+
+    if { [llength $argv] < 4 } {
+	puts "Usage:"
+	puts "  tclsh release.tcl [-buildType buildType|-buildId buildId|-json path] [-host host]"
+	puts "  e.g. tclsh release.tcl -buildType ProjCNext -host http://52.214.125.98:8111"
+	puts "  e.g. tclsh release.tcl -buildId %teamcity.build.id% -host %teamcity.serverUrl%"
+	return 1
+    }
+
+    if { [dict exists $argv "-json"] } {
+
+	set fname [dict get $argv "-json"]
+	set fid [open $fname]
+	set json [read $fid]
+	set config [json::json2dict $json]
+	close $fid
+
+    } else {
+
+	# Generated the config
+	set config [configTree]
+    }
+	
+    release [configTree]
+}
+
+proc release { config } {
+
+    # Get a flat orderd list of configs
+    set recipe [flattenConfig $config ]
+
+    # Verify the given config
+    if { ![verifyConfig $config] } {
 	exit 1
     }
 
@@ -237,5 +271,10 @@ if { [string match "*/release.tcl" $argv0] } {
     set scriptDir [file dirname [info script]]
     source $scriptDir/config.tcl
 
-    releaseMain $argv
+    set cmd [dict get $argv "-cmd"]
+    if { $cmd eq "prepare" } {
+	prepareMain $argv
+    } else {
+	releaseMain $argv
+    }
 }

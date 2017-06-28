@@ -49,7 +49,7 @@ proc configTree { } {
     } else {
 	# Get the last successful build id
 	set buildType [dict get $argv "-buildType"]
-	set xml [teamcityGET /app/rest/builds?locator=buildType:$buildType,status:SUCCESS,count:1]
+	set xml [teamcityGET /app/rest/builds?locator=buildType:$buildType,count:1]
 	set node [selectNode $xml {/builds/build}]
 	set buildId [$node @id]
     }
@@ -57,7 +57,7 @@ proc configTree { } {
     return [getBuildConfig $buildId]
 }
 
-proc verifyConfig { config {quiet false} } {
+proc verifyConfig { config } {
     puts "Verifying configuration\n"
     puts [config2json $config]
 
