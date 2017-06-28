@@ -15,6 +15,12 @@ public abstract class Item {
         private final String name;
         private final int value;
 
+        public static Capability parse(String spec) {
+            String name = spec.substring(0, 1);
+            String number = spec.substring(1);
+            return new Capability(name, Integer.parseInt(number));
+        }
+        
         public Capability(String name, int value) {
             this.name = name;
             this.value = value;
@@ -38,6 +44,19 @@ public abstract class Item {
         private final int min;
         private final int max;
 
+        public static Requirement parse(String spec) {
+            String name = spec.substring(0, spec.indexOf('('));
+            String min = spec.substring(spec.indexOf('(') + 1, spec.lastIndexOf(')'));
+            String max;
+            if (min.indexOf('-') > 0) {
+                max = min.substring(min.indexOf('-') + 1);
+                min = min.substring(0, min.indexOf('-'));
+            } else {
+                max = min;
+            }
+            return new Requirement(name, Integer.parseInt(min), Integer.parseInt(max));
+        }
+        
         public Requirement(String name, int min, int max) {
             this.name = name;
             this.min = min;
