@@ -172,7 +172,7 @@ proc gitCheckout { projId vcsUrl vcsBranch } {
     if { [file exists $workDir] } {
 	cd $workDir
 	catch { exec git clean --force } res
-	catch { exec git fetch origin $vcsBranch } res
+	catch { exec git fetch --force origin } res
 	catch { exec git checkout $vcsBranch } res
 	catch { exec git reset --hard origin/$vcsBranch } res
     } else {
