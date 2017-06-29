@@ -3,7 +3,7 @@
 
 if { $argc < 5 } {
     puts "Usage:"
-    puts "   tclsh switch.tcl -baseUrl baseUrl -cmd \[config|prmerge|release] args"
+    puts "   tclsh switch.tcl -baseUrl baseUrl -cmd \[config|prmerge|prepare|release] args"
     puts "   e.g. tclsh switch.tcl -baseUrl https://raw.githubusercontent.com/FuseCID/cidpoc/master/scripts -cmd config args"
 
     return 1

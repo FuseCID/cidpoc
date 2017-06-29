@@ -7,28 +7,28 @@ package require rest
 
 proc prepareMain { argv } {
 
-    if { [llength $argv] < 4 } {
+    if { [llength $argv] < 8 } {
 	puts "Usage:"
-	puts "  tclsh release.tcl -cmd prepare [-buildType buildType|-buildId buildId|-json path] [-host host]"
-	puts "  e.g. tclsh release.tcl -cmd prepare -buildType ProjCNext -host http://52.214.125.98:8111"
-	puts "  e.g. tclsh release.tcl -cmd prepare -buildId %teamcity.build.id% -host %teamcity.serverUrl%"
+	puts "  tclsh release.tcl -cmd prepare [-buildType buildType|-buildId buildId|-json path] -tcuser username -tcpass password [-host host]"
+	puts "  e.g. tclsh release.tcl -cmd prepare -buildType ProjCNext -tcuser restuser -tcpass somepass -host http://52.214.125.98:8111"
+	puts "  e.g. tclsh release.tcl -cmd prepare -buildId %teamcity.build.id% -tcuser %system.teamcity.auth.userId% -tcpass %system.teamcity.auth.password% -host %teamcity.serverUrl%"
 	return 1
     }
 
     if { [dict exists $argv "-json"] } {
-
 	set fname [dict get $argv "-json"]
 	set fid [open $fname]
 	set json [read $fid]
 	set config [json::json2dict $json]
 	close $fid
-
-	# An explicit config must be valid
-	return [verifyConfig $config]
+	if { ![verifyConfig $config] } {
+	    exit 1
+	}
+    } else {
+	set config [configTree $argv]
     }
 
-    # Release the generated config
-    prepare [configTree]
+    prepare $config
 }
 
 proc prepare { config } {
@@ -64,29 +64,25 @@ proc prepare { config } {
 
 proc releaseMain { argv } {
 
-    if { [llength $argv] < 4 } {
+    if { [llength $argv] < 8 } {
 	puts "Usage:"
-	puts "  tclsh release.tcl [-buildType buildType|-buildId buildId|-json path] [-host host]"
+	puts "  tclsh release.tcl [-buildType buildType|-buildId buildId|-json path] -tcuser username -tcpass password [-host host]"
 	puts "  e.g. tclsh release.tcl -buildType ProjCNext -host http://52.214.125.98:8111"
-	puts "  e.g. tclsh release.tcl -buildId %teamcity.build.id% -host %teamcity.serverUrl%"
+	puts "  e.g. tclsh release.tcl -buildId %teamcity.build.id% -tcuser %system.teamcity.auth.userId% -tcpass %system.teamcity.auth.password% -host %teamcity.serverUrl%"
 	return 1
     }
 
     if { [dict exists $argv "-json"] } {
-
 	set fname [dict get $argv "-json"]
 	set fid [open $fname]
 	set json [read $fid]
 	set config [json::json2dict $json]
 	close $fid
-
     } else {
-
-	# Generated the config
-	set config [configTree]
+	set config [configTree $argv]
     }
-	
-    release [configTree]
+
+    release $config
 }
 
 proc release { config } {

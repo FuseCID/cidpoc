@@ -2,22 +2,22 @@
 #
 
 dict set config ProjA vcsUrl "git@github.com:FuseCID/cidpocA.git"
-dict set config ProjA branch master 1.0.0 1
+dict set config ProjA branch master 1.1.0 1
 
 dict set config ProjB vcsUrl "git@github.com:FuseCID/cidpocB.git"
-dict set config ProjB branch master 1.0.0 1
+dict set config ProjB branch master 1.1.0 1
 
 dict set config ProjC vcsUrl "git@github.com:FuseCID/cidpocC.git"
-dict set config ProjC branch master 1.0.0 1
-dict set config ProjC branch next 1.0.0 2
+dict set config ProjC branch master 1.1.0 1
+dict set config ProjC branch next 1.1.0 2
 
 dict set config ProjD vcsUrl "git@github.com:FuseCID/cidpocD.git"
-dict set config ProjD branch master 1.0.0 1
-dict set config ProjD branch next 1.0.0 2
+dict set config ProjD branch master 1.1.0 1
+dict set config ProjD branch next 1.1.0 2
 
 dict set config ProjE vcsUrl "git@github.com:FuseCID/cidpocE.git"
-dict set config ProjE branch master 1.0.0 1
-dict set config ProjE branch next 1.0.0 2
+dict set config ProjE branch master 1.1.0 1
+dict set config ProjE branch next 1.1.0 2
 
 proc mainMenu { argv } {
     while 1 {
@@ -26,18 +26,27 @@ proc mainMenu { argv } {
 	puts "\nFuse CID"
 	puts "========\n"
 
-	puts "\[1] Modify"
-	puts "\[2] Reset"
-	puts "\[3] Exit"
-	switch [promptForInteger "\n>" 1 3 1] 1 {
-	    modify
+	puts "\[1] Config"
+	puts "\[2] Modify"
+	puts "\[3] Reset"
+	puts "\[4] Exit"
+	switch [promptForInteger "\n>" 1 4 1] 1 {
+	    config
 	} 2 {
-	    reset
+	    modify
 	} 3 {
+	    reset
+	} 4 {
 	    puts "\nGood Bye!"
 	    exit 0
 	}
     }
+}
+
+proc config { } {
+    set buildType [promptForString "\nBuildType: "]
+    set config [configTreeByBuildType $buildType]
+    puts [config2json $config]
 }
 
 proc modify { } {

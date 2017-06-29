@@ -12,15 +12,15 @@ set targetDir [file normalize $scriptDir/target]
 proc configMain { argv } {
     variable targetDir
 
-    if { [llength $argv] < 2 } {
+    if { [llength $argv] < 6 } {
 	puts "Usage:"
-	puts "  tclsh config.tcl [-buildType buildType|-buildId buildId] [-host host]\n"
+	puts "  tclsh config.tcl [-buildType buildType|-buildId buildId] -tcuser username -tcpass password [-host host]\n"
 	puts "  e.g. tclsh config.tcl -buildType ProjCNext -host http://52.214.125.98:8111"
 	puts "  e.g. tclsh config.tcl -buildId 363"
 	return 1
     }
 
-    set config [configTree]
+    set config [configTree $argv ]
 
     #set json [json::dict2json $config]
     set json [config2json $config]
@@ -41,20 +41,16 @@ proc configMain { argv } {
     verifyConfig $config
 }
 
-proc configTree { } {
-    variable argv
+proc configTree { argv } {
 
     if { [dict exists $argv "-buildId"] } {
 	set buildId [dict get $argv "-buildId"]
+	return [configTreeByBuildId $buildId]
     } else {
-	# Get the last successful build id
 	set buildType [dict get $argv "-buildType"]
-	set xml [teamcityGET /app/rest/builds?locator=buildType:$buildType,count:1]
-	set node [selectNode $xml {/builds/build}]
-	set buildId [$node @id]
+	return [configTreeByBuildType $buildId]
     }
 
-    return [getBuildConfig $buildId]
 }
 
 proc verifyConfig { config } {
@@ -93,20 +89,16 @@ proc verifyConfig { config } {
 
 # Private ========================
 
-proc flattenConfig { config { result ""} } {
-    set projId [dict get $config "projId"]
-    if { [dict exists $result $projId] == 0 } {
-	set depids [list]
-	foreach { snap } [dict get $config "dependencies"] {
-	    lappend depids [dict get $snap "projId"]
-	    set result [flattenConfig $snap $result]
-	}
-	dict append result $projId [dict replace $config "dependencies" $depids]
-    }
-    return $result
+proc configTreeByBuildType { buildType } {
+
+    set xml [teamcityGET /app/rest/builds?locator=buildType:$buildType,count:1]
+    set node [selectNode $xml {/builds/build}]
+    set buildId [$node @id]
+
+    return [configTreeByBuildId $buildId]
 }
 
-proc getBuildConfig { buildId } {
+proc configTreeByBuildId { buildId } {
 
     set xml [teamcityGET /app/rest/builds/id:$buildId]
     set node [selectNode $xml {/build}]
@@ -133,7 +125,7 @@ proc getBuildConfig { buildId } {
     # Collect the list of snapshot dependencies
     set snapdeps [dict create]
     foreach { depNode } [$node selectNodes {snapshot-dependencies/build}] {
-	set depconf [getBuildConfig [$depNode @id]]
+	set depconf [configTreeByBuildId [$depNode @id]]
 	dict set snapdeps [dict get $depconf "projId"] $depconf
     }
 
@@ -163,6 +155,19 @@ proc getBuildConfig { buildId } {
     dict set config dependencies [dict values $snapdeps]
 
     return $config
+}
+
+proc flattenConfig { config { result ""} } {
+    set projId [dict get $config "projId"]
+    if { [dict exists $result $projId] == 0 } {
+	set depids [list]
+	foreach { snap } [dict get $config "dependencies"] {
+	    lappend depids [dict get $snap "projId"]
+	    set result [flattenConfig $snap $result]
+	}
+	dict append result $projId [dict replace $config "dependencies" $depids]
+    }
+    return $result
 }
 
 # Checkout or clone the specified branch and change to the resulting workdir
