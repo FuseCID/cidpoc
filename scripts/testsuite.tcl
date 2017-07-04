@@ -28,28 +28,31 @@ proc mainMenu { argv } {
 
 	puts "\[1] Config"
 	puts "\[2] Modify"
-	puts "\[3] Reset"
-	puts "\[4] Exit"
-	switch [promptForInteger "\n>" 1 4 1] 1 {
-	    config
+	puts "\[3] Release"
+	puts "\[4] Reset"
+	puts "\[5] Exit"
+	switch [promptForInteger "\n>" 1 5 1] 1 {
+	    doConfig
 	} 2 {
-	    modify
+	    doModify
 	} 3 {
-	    reset
+	    doRelease
 	} 4 {
+	    doReset
+	} 5 {
 	    puts "\nGood Bye!"
 	    exit 0
 	}
     }
 }
 
-proc config { } {
+proc doConfig { } {
     set buildType [promptForString "\nBuildType: "]
     set config [configTreeByBuildType $buildType]
     puts [config2json $config]
 }
 
-proc modify { } {
+proc doModify { } {
     variable config
 
     set cap [promptForString "\nCapability: "]
@@ -96,7 +99,13 @@ proc modify { } {
     catch { exec git push origin } res; puts $res
 }
 
-proc reset { } {
+proc doRelease { } {
+    set buildType [promptForString "\nBuildType: "]
+    set config [configTreeByBuildType $buildType]
+    release $config
+}
+
+proc doReset { } {
     variable config
 
     if { ![promptForBoolean "Reset all projects" 0] } {

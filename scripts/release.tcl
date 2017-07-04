@@ -9,7 +9,7 @@ proc prepareMain { argv } {
 
     if { [llength $argv] < 8 } {
 	puts "Usage:"
-	puts "  tclsh release.tcl -cmd prepare [-buildType buildType|-buildId buildId|-json path] -tcuser username -tcpass password [-host host]"
+	puts "  tclsh release.tcl -cmd prepare \[-buildType buildType|-buildId buildId|-json path] -tcuser username -tcpass password \[-host host]"
 	puts "  e.g. tclsh release.tcl -cmd prepare -buildType ProjCNext -tcuser restuser -tcpass somepass -host http://52.214.125.98:8111"
 	puts "  e.g. tclsh release.tcl -cmd prepare -buildId %teamcity.build.id% -tcuser %system.teamcity.auth.userId% -tcpass %system.teamcity.auth.password% -host %teamcity.serverUrl%"
 	return 1
@@ -64,9 +64,9 @@ proc prepare { config } {
 
 proc releaseMain { argv } {
 
-    if { [llength $argv] < 8 } {
+    if { [llength $argv] < 6 } {
 	puts "Usage:"
-	puts "  tclsh release.tcl [-buildType buildType|-buildId buildId|-json path] -tcuser username -tcpass password [-host host]"
+	puts "  tclsh release.tcl \[-buildType buildType|-buildId buildId|-json path] -tcuser username -tcpass password \[-host host]"
 	puts "  e.g. tclsh release.tcl -buildType ProjCNext -host http://52.214.125.98:8111"
 	puts "  e.g. tclsh release.tcl -buildId %teamcity.build.id% -tcuser %system.teamcity.auth.userId% -tcpass %system.teamcity.auth.password% -host %teamcity.serverUrl%"
 	return 1
@@ -215,10 +215,23 @@ proc gitPush { branch } {
     }
 }
 
+proc mvnPath { } {
+    variable argv
+    if { [catch { exec which mvn } res] } {
+	if { [dict exists $argv "-mvnHome"] } {
+	    set res "[dict get $argv -mvnHome]/bin/mvn"
+	} else {
+	    error "Cannot find 'mvn' executable"
+	}
+    }
+    return $res
+}
+
 proc mvnRelease { tagName nextVersion } {
     puts "mvn release:prepare -DreleaseVersion=$tagName -Dtag=$tagName -DdevelopmentVersion=$nextVersion"
-    exec mvn release:prepare -DautoVersionSubmodules=true {-DscmCommentPrefix=[fuse-cid] } -DreleaseVersion=$tagName -Dtag=$tagName -DdevelopmentVersion=$nextVersion
-    execCmd "mvn release:perform"
+    exec [mvnPath] release:prepare -DautoVersionSubmodules=true {-DscmCommentPrefix=[fuse-cid] } -DreleaseVersion=$tagName -Dtag=$tagName -DdevelopmentVersion=$nextVersion
+    puts "mvn release:perform"
+    exec [mvnPath] release:perform
 }
 
 proc nextVersion { version } {
@@ -267,8 +280,7 @@ if { [string match "*/release.tcl" $argv0] } {
     set scriptDir [file dirname [info script]]
     source $scriptDir/config.tcl
 
-    set cmd [dict get $argv "-cmd"]
-    if { $cmd eq "prepare" } {
+    if { [dict exists $argv "-cmd"] && [dict get $argv "-cmd"] eq "prepare" } {
 	prepareMain $argv
     } else {
 	releaseMain $argv

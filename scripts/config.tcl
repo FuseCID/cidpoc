@@ -48,7 +48,7 @@ proc configTree { argv } {
 	return [configTreeByBuildId $buildId]
     } else {
 	set buildType [dict get $argv "-buildType"]
-	return [configTreeByBuildType $buildId]
+	return [configTreeByBuildType $buildType]
     }
 
 }
