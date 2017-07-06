@@ -217,10 +217,10 @@ proc gitPush { branch } {
 
 proc mvnPath { } {
     variable argv
-    if { [catch { exec which mvn } res] } {
-	if { [dict exists $argv "-mvnHome"] } {
-	    set res "[dict get $argv -mvnHome]/bin/mvn"
-	} else {
+    if { [dict exists $argv "-mvnHome"] } {
+	set res "[dict get $argv -mvnHome]/bin/mvn"
+    } else {
+	if { [catch { exec which mvn } res] } {
 	    error "Cannot find 'mvn' executable"
 	}
     }

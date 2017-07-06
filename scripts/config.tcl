@@ -12,9 +12,9 @@ set targetDir [file normalize $scriptDir/target]
 proc configMain { argv } {
     variable targetDir
 
-    if { [llength $argv] < 6 } {
+    if { [llength $argv] < 2 } {
 	puts "Usage:"
-	puts "  tclsh config.tcl [-buildType buildType|-buildId buildId] -tcuser username -tcpass password [-host host]\n"
+	puts "  tclsh config.tcl \[-buildType buildType|-buildId buildId] \[-tcuser username] \[-tcpass password] \[-host host]\n"
 	puts "  e.g. tclsh config.tcl -buildType ProjCNext -host http://52.214.125.98:8111"
 	puts "  e.g. tclsh config.tcl -buildId 363"
 	return 1
@@ -182,7 +182,9 @@ proc gitCheckout { projId vcsUrl vcsBranch } {
 	catch { exec git reset --hard origin/$vcsBranch } res
     } else {
 	file mkdir $workDir/..
-	catch { exec git clone -b $vcsBranch $vcsUrl $workDir } res
+	if { [catch { exec git clone -b $vcsBranch $vcsUrl $workDir } res] } {
+	    puts stderr $res
+	}
 	cd $workDir
     }
     return $workDir
@@ -232,8 +234,10 @@ proc pomValue { pomFile path } {
 
 proc teamcityGET { path } {
     variable argv
-    set serverUrl [expr { [dict exists $argv "-host"] ? [dict get $argv "-host"] : "http://teamcity:8111"}]
-    dict set config auth { basic restuser restpass }
+    set serverUrl [expr {[dict exists $argv "-host"] ? [dict get $argv "-host"] : "http://teamcity:8111"}]
+    set tcuser [expr {[dict exists $argv "-tcuser"] ? [dict get $argv "-tcuser"] : "restuser" }]
+    set tcpass [expr {[dict exists $argv "-tcpass"] ? [dict get $argv "-tcpass"] : "restpass" }]
+    dict set config auth [list basic $tcuser $tcpass]
     return [rest::get $serverUrl$path "" $config ]
 }
 
