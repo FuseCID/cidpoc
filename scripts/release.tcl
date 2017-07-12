@@ -117,9 +117,11 @@ proc releaseProject { recipe key } {
 	gitVerifyHeadRevision $projId $vcsBranch $vcsCommit
 
 	# Check the last commit message
+	set lastAvailableTag [gitLastAvailableTag]
 	set subject [exec git log --max-count=1 --pretty=%s $vcsBranch]
 	set lastCommitIsOurs [expr {[string match {\[fuse-cid]*} $subject] && ![string match {* Replace *-SNAPSHOT with *-SNAPSHOT} $subject]} ]
 	set useLastAvailableTag [expr { $lastCommitIsOurs || {[maven-release-plugin] prepare for next development iteration} eq $subject }]
+	set useLastAvailableTag [expr { $useLastAvailableTag || [exec git rev-parse HEAD] eq [exec git rev-parse $lastAvailableTag^] }]
 
 	# Scan dependencies for updates
 	foreach { depId } $dependencies {
@@ -129,9 +131,14 @@ proc releaseProject { recipe key } {
 
 	# Get or create project tag
 	if { $useLastAvailableTag } {
-	    set tagName [gitLastAvailableTag $vcsBranch]
+	    set tagName $lastAvailableTag
+	    puts "Use last available tag: $tagName"
 	    set proj [dict set proj updated "false"]
 	} else {
+	    set tagName [gitNextAvailableTag $pomVersion]
+	    puts "Create a new tag: $tagName"
+	    set relBranch [gitReleaseBranchCreate $tagName]
+
 	    # Update the dependencies in POM with tagged versions
 	    foreach { depId } $dependencies {
 		set propName [lindex [dict get $pomProps $depId] 0]
@@ -139,32 +146,16 @@ proc releaseProject { recipe key } {
 		set depTag [dict get $recipeRef $depId "tagName"]
 		pomUpdate $propName $propVersion $depTag
 	    }
-	    set tagName [gitCreateTag [strip $pomVersion "-SNAPSHOT"]]
+
+	    mvnRelease $tagName
+	    gitReleaseBranchDelete $relBranch $vcsBranch
+
 	    set proj [dict set proj updated "true"]
 	}
 
 	# Store the tagName in the config
 	set proj [dict set proj tagName $tagName]
 	dict set recipeRef $key $proj
-
-	if { !$useLastAvailableTag && $vcsTargetBranch ne $vcsBranch } {
-
-	    # Merge the created tag to the target branch
-	    gitMerge $projId $vcsUrl $vcsTargetBranch $vcsBranch
-	    gitPush $vcsTargetBranch
-
-	    # Use a simple checkout
-	    gitSimpleCheckout $projId $vcsBranch
-
-	    # Update the dependencies in POM with next versions
-	    foreach { depId } $dependencies {
-		set pomKey [lindex [dict get $pomProps $depId] 0]
-		set pomVal [dict get $recipeRef $depId "tagName"]
-		set pomNextVal "[nextVersion $pomVal]-SNAPSHOT"
-		pomUpdate $pomKey $pomVal $pomNextVal
-	    }
-	    gitPush $vcsBranch
-	}
     }
 }
 
@@ -184,21 +175,20 @@ proc gitCommit { message } {
     exec git commit -m "\[fuse-cid] $message"
 }
 
-proc gitCreateTag { tagName } {
-    set nextVersion "[nextVersion $tagName]-SNAPSHOT"
-    mvnRelease $tagName $nextVersion
+proc gitLastAvailableTag { } {
+    set tagList [exec git tag]
+    set tagName [lindex $tagList [expr { [llength $tagList] - 1 }]]
     return $tagName
 }
 
-proc gitLastAvailableTag { branch } {
-    set tagName [exec git describe --abbrev=0]
-    puts "Using last available tag: $tagName"
+proc gitNextAvailableTag { pomVersion } {
+    set tagName [nextVersion $pomVersion]
+    set tagList [exec git tag]
+    while { [lsearch $tagList $tagName] >= 0 } {
+	set tagName [nextVersion $tagName]
+	set tagName [nextVersion $tagName]
+    }
     return $tagName
-}
-
-proc gitMerge { projId vcsUrl targetBranch mergeBranch } {
-    gitCheckout $projId $vcsUrl $targetBranch
-    execCmd "git merge --ff-only $mergeBranch"
 }
 
 proc gitPush { branch } {
@@ -215,6 +205,19 @@ proc gitPush { branch } {
     }
 }
 
+proc gitReleaseBranchCreate { tagName } {
+    set relBranch "tmp-$tagName"
+    catch { exec git branch $relBranch }
+    catch { exec git checkout $relBranch } res; puts $res
+    return $relBranch
+}
+
+proc gitReleaseBranchDelete { relBranch curBranch } {
+    catch { exec git checkout --force $curBranch }
+    catch { exec git push origin --delete $relBranch } res; puts $res
+    catch { exec git branch -D $relBranch }
+}
+
 proc mvnPath { } {
     variable argv
     if { [dict exists $argv "-mvnHome"] } {
@@ -227,29 +230,47 @@ proc mvnPath { } {
     return $res
 }
 
-proc mvnRelease { tagName nextVersion } {
+proc mvnRelease { tagName { perform 1 }} {
+    set nextVersion [nextVersion $tagName]
     puts "mvn release:prepare -DreleaseVersion=$tagName -Dtag=$tagName -DdevelopmentVersion=$nextVersion"
     exec [mvnPath] release:prepare -DautoVersionSubmodules=true {-DscmCommentPrefix=[fuse-cid] } -DreleaseVersion=$tagName -Dtag=$tagName -DdevelopmentVersion=$nextVersion
-    puts "mvn release:perform"
-    exec [mvnPath] release:perform
+    if { $perform } {
+	puts "mvn release:perform"
+	exec [mvnPath] release:perform
+    }
 }
 
 proc nextVersion { version } {
     set tokens [split $version '.']
     set major [lindex $tokens 0]
     set minor [lindex $tokens 1]
-    set idx [string length "$major.$minor."]
-    set patch [string range $version $idx end]
-    set idx [string first "-" $patch]
-    if { $idx > 0 } {
-	set micro [string range $patch 0 [expr $idx - 1]]
-	set patch [string range $patch $idx end]
+    if { [llength $tokens] < 4 } {
+	set patch ".fuse-700001"
+	set micro [lindex $tokens 2]
+	if { [string match "*-SNAPSHOT" $micro] } {
+	    set idx [expr {[string length $micro] - 10}]
+	    set micro [string range $micro 0 $idx]
+	}
     } else {
-	set micro $patch
-	set patch ""
+	set micro [lindex $tokens 2]
+	set idx [string length "$major.$minor.$micro"]
+	set patch [string range $version $idx end]
+	if { [string match "*-SNAPSHOT" $patch] } {
+	    set idx [expr {[string length $patch] - 10}]
+	    set patch [string range $patch 0 $idx]
+	} elseif { [string match ".fuse-??????" $patch] }  {
+	    set start [string range $patch 0 5]
+	    set num [string range $patch 6 end]
+	    set patch "$start[expr { $num + 1}]"
+	} else {
+	    error "Cannot parse version: $version"
+	}
     }
-    set micro [expr $micro + 1]
-    return "$major.$minor.$micro$patch"
+    set result "$major.$minor.$micro$patch"
+    if { ![string match "*-SNAPSHOT" $version] } {
+	set result "$result-SNAPSHOT"
+    }
+    return $result
 }
 
 proc pomUpdate { pomKey pomVal nextVal } {
@@ -260,17 +281,6 @@ proc pomUpdate { pomKey pomVal nextVal } {
     exec sed $suffix "s#<$pomKey>$pomVal</$pomKey>#<$pomKey>$nextVal</$pomKey>#" pom.xml
     exec git add pom.xml
     gitCommit $message
-}
-
-proc tcRest { path } {
-    set tcUrl "http://teamcity:8111"
-    dict set restcfg auth { basic restuser restpass }
-    return [rest::get $tcUrl$path "" $restcfg ]
-}
-
-proc strip { value strip } {
-    set idx [expr [string last $strip $value] - 1]
-    return [string range $value 0 $idx]
 }
 
 # Main ========================
