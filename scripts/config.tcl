@@ -171,7 +171,7 @@ proc flattenConfig { config { result ""} } {
 }
 
 # Checkout or clone the specified branch and change to the resulting workdir
-proc gitCheckout { projId vcsUrl vcsBranch } {
+proc gitCheckout { projId vcsUrl { vcsBranch "master" } } {
     variable targetDir
     set workDir [file normalize $targetDir/checkout/$projId]
     if { [file exists $workDir] } {

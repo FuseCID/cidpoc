@@ -38,16 +38,16 @@ proc prepare { config } {
 
     # Verify the given config
     if { ![verifyConfig $config] } {
-	dict for { key conf} $recipe {
+	dict for { projId conf} $recipe {
 	    dict with conf {
 		set updated false
-		gitSimpleCheckout $key $vcsBranch
-		foreach { depName } $dependencies {
-		    set pomVersion [dict get $recipe $depName "pomVersion"]
-		    set propName [lindex [dict get $conf "pomProps" $depName] 0]
-		    set propVersion [lindex [dict get $conf "pomProps" $depName] 1]
+		gitSimpleCheckout $projId $vcsBranch
+		foreach { depId } $dependencies {
+		    set pomVersion [dict get $recipe $depId "pomVersion"]
+		    set propName [lindex [dict get $conf "pomProps" $depId] 0]
+		    set propVersion [lindex [dict get $conf "pomProps" $depId] 1]
 		    if { $propVersion ne $pomVersion } {
-			pomUpdate $propName $propVersion $pomVersion
+			pomUpdate $depId $propName $propVersion $pomVersion
 			set updated true
 		    }
 		}
@@ -96,8 +96,8 @@ proc release { config } {
     }
 
     puts "\nProcessing projects: [dict keys $recipe]"
-    foreach { key } [dict keys $recipe] {
-	releaseProject recipe $key
+    foreach { projId } [dict keys $recipe] {
+	releaseProject recipe $projId
     }
 
     puts "\nGood Bye!"
@@ -105,10 +105,10 @@ proc release { config } {
 
 # Private ========================
 
-proc releaseProject { recipe key } {
+proc releaseProject { recipe projId } {
     upvar $recipe recipeRef
 
-    set proj [dict get $recipeRef $key]
+    set proj [dict get $recipeRef $projId]
     dict with proj {
 	puts "\nProcessing project: $projId"
 
@@ -117,23 +117,59 @@ proc releaseProject { recipe key } {
 	gitVerifyHeadRevision $projId $vcsBranch $vcsCommit
 
 	# Check the last commit message
+	set headRev [gitGetHash HEAD]
+	set subject [gitGetSubject HEAD]
 	set lastAvailableTag [gitLastAvailableTag]
-	set subject [exec git log --max-count=1 --pretty=%s $vcsBranch]
-	set lastCommitIsOurs [expr {[string match {\[fuse-cid]*} $subject] && ![string match {* Replace *-SNAPSHOT with *-SNAPSHOT} $subject]} ]
-	set useLastAvailableTag [expr { $lastCommitIsOurs || {[maven-release-plugin] prepare for next development iteration} eq $subject }]
-	set useLastAvailableTag [expr { $useLastAvailableTag || [exec git rev-parse HEAD] eq [exec git rev-parse $lastAvailableTag^] }]
+	set lastCommitIsOurs [string match "?fuse-cid] Upgrade *" $subject]
+	set prepareForNext [string match "?maven-release-plugin] prepare for next *" $subject]
+	set useLastAvailableTag [expr { $prepareForNext || $lastCommitIsOurs }]
 
-	# Scan dependencies for updates
-	foreach { depId } $dependencies {
-	    set updated [dict get $recipeRef $depId "updated"]
-	    set useLastAvailableTag [expr { $useLastAvailableTag && !$updated }]
+	# Verify that HEAD is reachable from lastAvailableTag
+	if { !$useLastAvailableTag } {
+	    set auxRev [gitGetHash $lastAvailableTag]
+	    while { $auxRev ne $headRev } {
+		if { [catch { set auxRev [gitGetHash $auxRev^] }] } {
+		    break
+		}
+	    }
+	    set useLastAvailableTag [expr {$auxRev eq $headRev}]
+	}
+
+	# Verify the last available tag
+	if { $useLastAvailableTag && [llength $dependencies] > 0 } {
+	    set upgrades [dict create]
+
+	    # Scan the subject lines for version updates
+	    set auxRev [gitGetHash $lastAvailableTag^]
+	    while { $auxRev ne $headRev } {
+		set subject [gitGetSubject $auxRev]
+		if { [string match "?fuse-cid] Upgrade * to *" $subject] } {
+		    set depId [lindex $subject 2]
+		    set depTag [lindex $subject 4]
+		    dict set upgrades $depId $depTag
+		    set auxRev [gitGetHash $auxRev^]
+		} else {
+		    break
+		}
+	    }
+
+	    # Scan dependencies for updates
+	    foreach { depId } $dependencies {
+		set lastTag [dict get $recipeRef $depId "lastTag"]
+		set updated [dict get $recipeRef $depId "updated"]
+		if { !$updated && [dict exists $upgrades $depId] } {
+		    set updated [expr { $lastTag ne [dict get $upgrades $depId] }]
+		}
+		set useLastAvailableTag [expr { $useLastAvailableTag && !$updated }]
+	    }
 	}
 
 	# Get or create project tag
 	if { $useLastAvailableTag } {
 	    set tagName $lastAvailableTag
 	    puts "Use last available tag: $tagName"
-	    set proj [dict set proj updated "false"]
+	    set proj [dict set proj "lastTag" $tagName]
+	    set proj [dict set proj "updated" "false"]
 	} else {
 	    set tagName [gitNextAvailableTag $pomVersion]
 	    puts "Create a new tag: $tagName"
@@ -144,18 +180,19 @@ proc releaseProject { recipe key } {
 		set propName [lindex [dict get $pomProps $depId] 0]
 		set propVersion [lindex [dict get $pomProps $depId] 1]
 		set depTag [dict get $recipeRef $depId "tagName"]
-		pomUpdate $propName $propVersion $depTag
+		pomUpdate $depId $propName $propVersion $depTag
 	    }
 
 	    mvnRelease $tagName
 	    gitReleaseBranchDelete $relBranch $vcsBranch
 
-	    set proj [dict set proj updated "true"]
+	    set proj [dict set proj "lastTag" $tagName]
+	    set proj [dict set proj "updated" "true"]
 	}
 
 	# Store the tagName in the config
 	set proj [dict set proj tagName $tagName]
-	dict set recipeRef $key $proj
+	dict set recipeRef $projId $proj
     }
 }
 
@@ -173,6 +210,14 @@ proc execCmd { cmd } {
 proc gitCommit { message } {
     puts "\[fuse-cid] $message"
     exec git commit -m "\[fuse-cid] $message"
+}
+
+proc gitGetHash { rev } {
+    return [exec git log -n 1 --pretty=%h $rev]
+}
+
+proc gitGetSubject { rev } {
+    return [exec git log -n 1 --pretty=%s $rev]
 }
 
 proc gitLastAvailableTag { } {
@@ -214,7 +259,7 @@ proc gitReleaseBranchCreate { tagName } {
 
 proc gitReleaseBranchDelete { relBranch curBranch } {
     catch { exec git checkout --force $curBranch }
-    catch { exec git push origin --delete $relBranch } res; puts $res
+    catch { exec git push origin --delete $relBranch }
     catch { exec git branch -D $relBranch }
 }
 
@@ -273,10 +318,10 @@ proc nextVersion { version } {
     return $result
 }
 
-proc pomUpdate { pomKey pomVal nextVal } {
+proc pomUpdate { projId pomKey pomVal nextVal } {
     variable tcl_platform
     if { ![file exists pom.xml] } { error "Cannot find [pwd]/pom.xml" }
-    set message "Replace $pomKey $pomVal with $nextVal"
+    set message "Upgrade $projId to $nextVal"
     set suffix [expr { $tcl_platform(os) eq "Darwin" ? [list -i ".bak"] : "-i.bak" }]
     exec sed $suffix "s#<$pomKey>$pomVal</$pomKey>#<$pomKey>$nextVal</$pomKey>#" pom.xml
     exec git add pom.xml

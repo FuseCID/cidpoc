@@ -2,22 +2,19 @@
 #
 
 dict set config ProjA vcsUrl "git@github.com:FuseCID/cidpocA.git"
-dict set config ProjA branch master 1.1.0 1
+dict set config ProjA vcsRef 1.1.0 1 master
 
 dict set config ProjB vcsUrl "git@github.com:FuseCID/cidpocB.git"
-dict set config ProjB branch master 1.1.0 1
+dict set config ProjB vcsRef 1.1.0 1 master
 
 dict set config ProjC vcsUrl "git@github.com:FuseCID/cidpocC.git"
-dict set config ProjC branch master 1.1.0 1
-dict set config ProjC branch next 1.1.0 2
+dict set config ProjC vcsRef 1.1.0 1 master next
 
 dict set config ProjD vcsUrl "git@github.com:FuseCID/cidpocD.git"
-dict set config ProjD branch master 1.1.0 1
-dict set config ProjD branch next 1.1.0 2
+dict set config ProjD vcsRef 1.1.0 1 master next
 
 dict set config ProjE vcsUrl "git@github.com:FuseCID/cidpocE.git"
-dict set config ProjE branch master 1.1.0 1
-dict set config ProjE branch next 1.1.0 2
+dict set config ProjE vcsRef 1.1.0 1 master next
 
 proc mainMenu { argv } {
     while 1 {
@@ -114,10 +111,10 @@ proc doReset { } {
 
     dict for { projId proj } $config {
 	dict with proj {
-	    dict for { vcsBranch data } $branch {
-		set vcsTag [lindex $data 0]
-		set offset [lindex $data 1]
-		resetProject $projId $vcsUrl $vcsBranch $vcsTag $offset
+	    dict for { rev data } $vcsRef {
+		set offset [lindex $data 0]
+		set branches [lindex $data 1]
+		resetProject $projId $vcsUrl $rev $offset $branches
 	    }
 	}
     }
@@ -172,27 +169,31 @@ proc promptForString {prompt {default ""}} {
     }
 }
 
-proc resetProject { projId vcsUrl vcsBranch vcsTag offset } {
-    puts "\nProcessing $projId $vcsBranch"
+proc resetProject { projId vcsUrl vcsRef offset branches } {
+    puts "\nProcessing $projId"
 
-    gitCheckout $projId $vcsUrl $vcsBranch
+    gitCheckout $projId $vcsUrl
+    catch { exec git fetch origin --tags }
 
     # Delete all other tags
     foreach { tag } [exec git tag] {
-	if { $tag ne $vcsTag } {
+	if { $tag ne $vcsRef } {
 	    puts "Deleting tag $tag"
 	    catch { exec git push origin :refs/tags/$tag }
 	    catch { exec git tag -d $tag }
 	}
     }
-    set revs [exec git log --format="%h" --reverse --ancestry-path $vcsTag^..HEAD]
+    set revs [exec git log --format="%h" --reverse --ancestry-path $vcsRef^..HEAD]
     set rev [lindex $revs $offset]
-    catch { exec git reset --hard $rev }
-    catch { exec git commit --amend --no-edit }
-    if { $vcsBranch ne "master" } {
-	catch { exec git rebase master }
+    foreach { branch } $branches {
+	gitSimpleCheckout $projId $branch
+	catch { exec git reset --hard $rev }
+	if { $branch eq "master" } {
+	    catch { exec git commit --amend --no-edit }
+	    set rev [exec git rev-parse HEAD]
+	}
+	catch { exec git push origin -f $branch } res; puts $res
     }
-    catch { exec git push origin -f $vcsBranch } res; puts $res
 }
 
 # Main ========================
