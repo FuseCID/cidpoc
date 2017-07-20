@@ -107,6 +107,7 @@ proc release { config } {
 
 proc releaseProject { recipeRef projId } {
     upvar $recipeRef recipe
+    variable argv
 
     set proj [dict get $recipe $projId]
     dict with proj {
@@ -136,7 +137,11 @@ proc releaseProject { recipeRef projId } {
 		pomUpdate $depId $propName $propVersion $depTag
 	    }
 
-	    mvnRelease $tagName
+	    createNewTag $tagName
+
+	    #gitMerge $projId $vcsBranch $relBranch
+	    #gitPush $vcsBranch
+
 	    gitReleaseBranchDelete $relBranch $vcsBranch
 
 	    set proj [dict set proj "updated" "true"]
@@ -148,9 +153,20 @@ proc releaseProject { recipeRef projId } {
     }
 }
 
-proc execCmd { cmd } {
-    logInfo $cmd
-    eval exec [split $cmd]
+proc createNewTag { tagName } {
+    logInfo "mvn versions:set -DnewVersion=$tagName"
+    exec [mvnPath] versions:set -DnewVersion=$tagName
+    exec [mvnPath] versions:commit
+    exec git add --all
+    gitCommit "prepare release $tagName"
+    gitTag $tagName
+    gitPush $tagName
+
+    set nextVersion "[nextVersion $tagName]-SNAPSHOT"
+    exec [mvnPath] versions:set -DnewVersion=$nextVersion
+    exec [mvnPath] versions:commit
+    exec git add --all
+    gitCommit "prepare for next development iteration"
 }
 
 proc getLastAvailableTag { recipe proj } {
@@ -285,6 +301,11 @@ proc gitNextAvailableTag { pomVersion } {
     return $tagName
 }
 
+proc gitMerge { projId target source } {
+    gitSimpleCheckout $projId $target
+    exec git merge --ff-only $source
+}
+
 proc gitPush { branch } {
     logInfo "git push origin $branch"
 
@@ -312,6 +333,18 @@ proc gitReleaseBranchDelete { relBranch curBranch } {
     catch { exec git branch -D $relBranch }
 }
 
+proc gitSimpleCheckout { projId vcsBranch } {
+    variable targetDir
+    set workDir [file normalize $targetDir/checkout/$projId]
+    cd $workDir
+    catch { exec git checkout $vcsBranch }
+    return $workDir
+}
+
+proc gitTag { tagName } {
+    exec git tag -a $tagName -m "\[fuse-cid] $tagName"
+}
+
 proc isPrepareForNext { branch } {
     set subject [exec git log --max-count=1 --pretty=%s $branch]
     set expected "\[maven-release-plugin] prepare for next development iteration"
@@ -328,16 +361,6 @@ proc mvnPath { } {
 	}
     }
     return $res
-}
-
-proc mvnRelease { tagName { perform 1 }} {
-    set nextVersion "[nextVersion $tagName]-SNAPSHOT"
-    logInfo "mvn release:prepare -DreleaseVersion=$tagName -Dtag=$tagName -DdevelopmentVersion=$nextVersion"
-    exec [mvnPath] release:prepare -DautoVersionSubmodules=true {-DscmCommentPrefix=[fuse-cid] } -DreleaseVersion=$tagName -Dtag=$tagName -DdevelopmentVersion=$nextVersion
-    if { $perform } {
-	logInfo "mvn release:perform"
-	exec [mvnPath] release:perform
-    }
 }
 
 proc nextVersion { version } {

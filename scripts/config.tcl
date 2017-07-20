@@ -176,12 +176,12 @@ proc log { num msg } {
     variable argv
 
     set debugLevel [dict create "debug" 4 "info" 3 "warn" 2 "error" 1]
-    set debugPrefix [dict create 4 "Debug" 3 "Info" 2 "Warn" 1 "Error"]
+    set debugPrefix [dict create 4 "Debug: " 3 "" 2 "Warn: " 1 "Error: "]
     
     set param [string tolower [expr { [dict exists $argv "-debug"] ? [dict get $argv "-debug"] : "info" }]]
     set level [dict get $debugLevel $param]
 
-    if { $num >= $level } {
+    if { $num <= $level } {
 	    
 	# Process leading white space
 	set trim [string trim $msg]
@@ -190,8 +190,8 @@ proc log { num msg } {
 	    puts -nonewline [string range $msg 0 [expr { $idx -1 }]]
 	    set msg [string range $msg $idx end]
 	}
-	    
-	puts "[dict get $debugPrefix $num]: $msg"
+	
+	puts "[dict get $debugPrefix $num]$msg"
     }
 }
 
@@ -225,14 +225,6 @@ proc gitCheckout { projId vcsUrl { vcsBranch "master" } } {
 	}
 	cd $workDir
     }
-    return $workDir
-}
-
-proc gitSimpleCheckout { projId vcsBranch } {
-    variable targetDir
-    set workDir [file normalize $targetDir/checkout/$projId]
-    cd $workDir
-    catch { exec git checkout $vcsBranch }
     return $workDir
 }
 
