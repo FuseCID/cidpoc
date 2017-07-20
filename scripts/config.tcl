@@ -172,15 +172,26 @@ proc logError { msg } {
     log 1 $msg
 }
 
-proc log { level msg } {
-    if { $level >= 4 } {
-	puts "Debug: $msg"
-    } elseif { $level >= 3 } {
-	puts "Info: $msg"
-    } elseif { $level >= 2 } {
-	puts "Warn: $msg"
-    } elseif { $level >= 1 } {
-	puts "Error: $msg"
+proc log { num msg } {
+    variable argv
+
+    set debugLevel [dict create "debug" 4 "info" 3 "warn" 2 "error" 1]
+    set debugPrefix [dict create 4 "Debug" 3 "Info" 2 "Warn" 1 "Error"]
+    
+    set param [string tolower [expr { [dict exists $argv "-debug"] ? [dict get $argv "-debug"] : "info" }]]
+    set level [dict get $debugLevel $param]
+
+    if { $num >= $level } {
+	    
+	# Process leading white space
+	set trim [string trim $msg]
+	set idx [string first $trim $msg]
+	if { $idx > 0 } {
+	    puts -nonewline [string range $msg 0 [expr { $idx -1 }]]
+	    set msg [string range $msg $idx end]
+	}
+	    
+	puts "[dict get $debugPrefix $num]: $msg"
     }
 }
 
@@ -210,7 +221,7 @@ proc gitCheckout { projId vcsUrl { vcsBranch "master" } } {
     } else {
 	file mkdir $workDir/..
 	if { [catch { exec git clone -b $vcsBranch $vcsUrl $workDir } res] } {
-	    puts stderr $res
+	    logInfo $res
 	}
 	cd $workDir
     }
