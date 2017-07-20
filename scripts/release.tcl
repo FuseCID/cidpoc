@@ -59,7 +59,7 @@ proc prepare { config } {
 	exit 1
     }
 
-    puts "\nOk to proceed!"
+    logInfo "\nOk to proceed!"
 }
 
 proc releaseMain { argv } {
@@ -95,120 +95,162 @@ proc release { config } {
 	exit 1
     }
 
-    puts "\nProcessing projects: [dict keys $recipe]"
+    logInfo "\nProcessing projects: [dict keys $recipe]"
     foreach { projId } [dict keys $recipe] {
 	releaseProject recipe $projId
     }
 
-    puts "\nGood Bye!"
+    logInfo "\nGood Bye!"
 }
 
 # Private ========================
 
-proc releaseProject { recipe projId } {
-    upvar $recipe recipeRef
+proc releaseProject { recipeRef projId } {
+    upvar $recipeRef recipe
 
-    set proj [dict get $recipeRef $projId]
+    set proj [dict get $recipe $projId]
     dict with proj {
-	puts "\nProcessing project: $projId"
+	logInfo "\nProcessing project: $projId"
 
 	# Checkout the project
 	gitCheckout $projId $vcsUrl $vcsBranch
 	gitVerifyHeadRevision $projId $vcsBranch $vcsCommit
 
-	# Check the last commit message
-	set headRev [gitGetHash HEAD]
-	set subject [gitGetSubject HEAD]
-	set lastAvailableTag [gitLastAvailableTag]
-	set lastCommitIsOurs [string match "?fuse-cid] Upgrade *" $subject]
-	set prepareForNext [string match "?maven-release-plugin] prepare for next *" $subject]
-	set useLastAvailableTag [expr { $prepareForNext || $lastCommitIsOurs }]
-
-	# Verify that HEAD is reachable from lastAvailableTag
-	if { !$useLastAvailableTag } {
-	    set auxRev [gitGetHash $lastAvailableTag]
-	    while { $auxRev ne $headRev } {
-		if { [catch { set auxRev [gitGetHash $auxRev^] }] } {
-		    break
-		}
-	    }
-	    set useLastAvailableTag [expr {$auxRev eq $headRev}]
-	}
-
-	# Verify the last available tag
-	if { $useLastAvailableTag && [llength $dependencies] > 0 } {
-	    set upgrades [dict create]
-
-	    # Scan the subject lines for version updates
-	    set auxRev [gitGetHash $lastAvailableTag^]
-	    while { $auxRev ne $headRev } {
-		set subject [gitGetSubject $auxRev]
-		if { [string match "?fuse-cid] Upgrade * to *" $subject] } {
-		    set depId [lindex $subject 2]
-		    set depTag [lindex $subject 4]
-		    dict set upgrades $depId $depTag
-		    set auxRev [gitGetHash $auxRev^]
-		} else {
-		    break
-		}
-	    }
-
-	    # Scan dependencies for updates
-	    foreach { depId } $dependencies {
-		set lastTag [dict get $recipeRef $depId "lastTag"]
-		set updated [dict get $recipeRef $depId "updated"]
-		if { !$updated && [dict exists $upgrades $depId] } {
-		    set updated [expr { $lastTag ne [dict get $upgrades $depId] }]
-		}
-		set useLastAvailableTag [expr { $useLastAvailableTag && !$updated }]
-	    }
-	}
+	set lastAvailableTag [getLastAvailableTag $recipe $proj]
 
 	# Get or create project tag
-	if { $useLastAvailableTag } {
+	if { $lastAvailableTag != 0 } {
 	    set tagName $lastAvailableTag
-	    puts "Use last available tag: $tagName"
-	    set proj [dict set proj "lastTag" $tagName]
+	    logInfo "Use last available tag: $tagName"
 	    set proj [dict set proj "updated" "false"]
 	} else {
 	    set tagName [gitNextAvailableTag $pomVersion]
-	    puts "Create a new tag: $tagName"
+	    logInfo "Create a new tag: $tagName"
 	    set relBranch [gitReleaseBranchCreate $tagName]
 
 	    # Update the dependencies in POM with tagged versions
 	    foreach { depId } $dependencies {
 		set propName [lindex [dict get $pomProps $depId] 0]
 		set propVersion [lindex [dict get $pomProps $depId] 1]
-		set depTag [dict get $recipeRef $depId "tagName"]
+		set depTag [dict get $recipe $depId "tagName"]
 		pomUpdate $depId $propName $propVersion $depTag
 	    }
 
 	    mvnRelease $tagName
 	    gitReleaseBranchDelete $relBranch $vcsBranch
 
-	    set proj [dict set proj "lastTag" $tagName]
 	    set proj [dict set proj "updated" "true"]
 	}
 
 	# Store the tagName in the config
-	set proj [dict set proj tagName $tagName]
-	dict set recipeRef $projId $proj
+	set proj [dict set proj "tagName" $tagName]
+	dict set recipe $projId $proj
     }
 }
 
-proc isPrepareForNext { branch } {
-    set subject [exec git log --max-count=1 --pretty=%s $branch]
-    set expected "\[maven-release-plugin] prepare for next development iteration"
-    return [string equal $subject $expected]
-}
-
 proc execCmd { cmd } {
-    puts $cmd
+    logInfo $cmd
     eval exec [split $cmd]
 }
 
+proc getLastAvailableTag { recipe proj } {
+
+    set headRev [gitGetHash HEAD]
+    set subject [gitGetSubject HEAD]
+    set lastAvailableTag [gitLastAvailableTag]
+    set tagRev [gitGetHash $lastAvailableTag]
+    set dependencies [dict get $proj "dependencies"]
+
+    logDebug "Last available tag: $lastAvailableTag - $tagRev"
+
+    # Search for updated dependencies
+    if { [llength $dependencies] > 0 } {
+	foreach { depId } $dependencies {
+	    set tagName [dict get $recipe $depId "tagName"]
+	    if { [dict get $recipe $depId "updated"] } {
+		logDebug "Found updated dependency: $depId $tagName"
+		return 0
+	    }
+	}
+    }
+
+    # If HEAD points to a maven release, we use the associated tag
+    if { [string match "?maven-release-plugin] prepare for next *" $subject] } {
+	logDebug "HEAD points to maven release"
+	return $lastAvailableTag
+    }
+
+    # If the tag is reachable from HEAD
+    if { [gitIsReachable $tagRev $headRev] } {
+
+	logDebug "Walking back from HEAD"
+
+	set auxRev [gitGetHash $headRev]
+	set subject [gitGetSubject $auxRev]
+
+	# Walk back, processing our own upgrade commits
+	while { $auxRev ne $tagRev } {
+	    logDebug "$auxRev - $subject"
+	    if { ![string match "?fuse-cid] Upgrade * to *" $subject] && ![string match "?maven-release-plugin] prepare for next *" $subject] } {
+		logWarn "Unrecognized commit on our way to '$lastAvailableTag'"
+		return 0
+	    }
+	    set auxRev [gitGetHash $auxRev^]
+	    set subject [gitGetSubject $auxRev]
+	}
+
+	return $lastAvailableTag
+    }
+
+    # If HEAD is not reachable from the tag
+    if { ![gitIsReachable $headRev $tagRev] } {
+	logWarn "HEAD not reachable from tag '$lastAvailableTag'"
+	return 0
+    }
+
+    logDebug "Walking back from $lastAvailableTag"
+
+    set auxRev $tagRev
+    set subject [gitGetSubject $auxRev]
+    set upgrades [dict create]
+
+    # Walk back, processing our own upgrade commits
+    while { $auxRev ne $headRev } {
+	logDebug "$auxRev - $subject"
+	if { [string match "?fuse-cid] Upgrade * to *" $subject] } {
+	    set depId [lindex $subject 2]
+	    set depTag [lindex $subject 4]
+	    dict set upgrades $depId $depTag
+	}
+	set auxRev [gitGetHash $auxRev^]
+	set subject [gitGetSubject $auxRev]
+    }
+
+    # Verify that dependency versions match subject lines
+    if { [llength $dependencies] > 0 } {
+
+	logDebug "Known upgrades: $upgrades"
+
+	# The tag is not usable if it does not match the dependency versions
+	foreach { depId } $dependencies {
+	    set tagName [dict get $recipe $depId "tagName"]
+	    logDebug "Tag defined by recipe: $depId $tagName"
+	    if { ![dict exists $upgrades $depId] } {
+		logWarn "Known upgrades do not contain an entry for: $depId"
+		return 0
+	    }
+	    if { $tagName ne [dict get $upgrades $depId] } {
+		logWarn "Tag in recipe does not correspond to upgrade"
+		return 0
+	    }
+	}
+    }
+
+    return $lastAvailableTag
+}
+
 proc gitCommit { message } {
-    puts "\[fuse-cid] $message"
+    logInfo "\[fuse-cid] $message"
     exec git commit -m "\[fuse-cid] $message"
 }
 
@@ -218,6 +260,14 @@ proc gitGetHash { rev } {
 
 proc gitGetSubject { rev } {
     return [exec git log -n 1 --pretty=%s $rev]
+}
+
+proc gitIsReachable { target from } {
+    if { [gitGetHash $target] == [gitGetHash $from^] } {
+	return 1
+    }
+    set revs [split [exec git rev-list $target..$from]]
+    return [expr {[llength $revs] > 1}]
 }
 
 proc gitLastAvailableTag { } {
@@ -231,13 +281,12 @@ proc gitNextAvailableTag { pomVersion } {
     set tagList [exec git tag]
     while { [lsearch $tagList $tagName] >= 0 } {
 	set tagName [nextVersion $tagName]
-	set tagName [nextVersion $tagName]
     }
     return $tagName
 }
 
 proc gitPush { branch } {
-    puts "git push origin $branch"
+    logInfo "git push origin $branch"
 
     # A successful push may still result in a non-zero return
     if { [catch { exec git push origin $branch } res] } {
@@ -246,14 +295,14 @@ proc gitPush { branch } {
 		error $res
 	    }
 	}
-	puts $res
+	logInfo $res
     }
 }
 
 proc gitReleaseBranchCreate { tagName } {
     set relBranch "tmp-$tagName"
     catch { exec git branch $relBranch }
-    catch { exec git checkout $relBranch } res; puts $res
+    catch { exec git checkout $relBranch } res; logInfo $res
     return $relBranch
 }
 
@@ -261,6 +310,12 @@ proc gitReleaseBranchDelete { relBranch curBranch } {
     catch { exec git checkout --force $curBranch }
     catch { exec git push origin --delete $relBranch }
     catch { exec git branch -D $relBranch }
+}
+
+proc isPrepareForNext { branch } {
+    set subject [exec git log --max-count=1 --pretty=%s $branch]
+    set expected "\[maven-release-plugin] prepare for next development iteration"
+    return [string equal $subject $expected]
 }
 
 proc mvnPath { } {
@@ -276,34 +331,32 @@ proc mvnPath { } {
 }
 
 proc mvnRelease { tagName { perform 1 }} {
-    set nextVersion [nextVersion $tagName]
-    puts "mvn release:prepare -DreleaseVersion=$tagName -Dtag=$tagName -DdevelopmentVersion=$nextVersion"
+    set nextVersion "[nextVersion $tagName]-SNAPSHOT"
+    logInfo "mvn release:prepare -DreleaseVersion=$tagName -Dtag=$tagName -DdevelopmentVersion=$nextVersion"
     exec [mvnPath] release:prepare -DautoVersionSubmodules=true {-DscmCommentPrefix=[fuse-cid] } -DreleaseVersion=$tagName -Dtag=$tagName -DdevelopmentVersion=$nextVersion
     if { $perform } {
-	puts "mvn release:perform"
+	logInfo "mvn release:perform"
 	exec [mvnPath] release:perform
     }
 }
 
 proc nextVersion { version } {
+    # Strip a potential -SNAPSHOT suffix
+    if { [string match "*-SNAPSHOT" $version] } {
+	set idx [expr {[string length $version] - 10}]
+	set version [string range $version 0 $idx]
+    }
     set tokens [split $version '.']
     set major [lindex $tokens 0]
     set minor [lindex $tokens 1]
     if { [llength $tokens] < 4 } {
 	set patch ".fuse-700001"
 	set micro [lindex $tokens 2]
-	if { [string match "*-SNAPSHOT" $micro] } {
-	    set idx [expr {[string length $micro] - 10}]
-	    set micro [string range $micro 0 $idx]
-	}
     } else {
 	set micro [lindex $tokens 2]
 	set idx [string length "$major.$minor.$micro"]
 	set patch [string range $version $idx end]
-	if { [string match "*-SNAPSHOT" $patch] } {
-	    set idx [expr {[string length $patch] - 10}]
-	    set patch [string range $patch 0 $idx]
-	} elseif { [string match ".fuse-??????" $patch] }  {
+	if { [string match ".fuse-??????" $patch] }  {
 	    set start [string range $patch 0 5]
 	    set num [string range $patch 6 end]
 	    set patch "$start[expr { $num + 1}]"
@@ -311,11 +364,7 @@ proc nextVersion { version } {
 	    error "Cannot parse version: $version"
 	}
     }
-    set result "$major.$minor.$micro$patch"
-    if { ![string match "*-SNAPSHOT" $version] } {
-	set result "$result-SNAPSHOT"
-    }
-    return $result
+    return "$major.$minor.$micro$patch"
 }
 
 proc pomUpdate { projId pomKey pomVal nextVal } {

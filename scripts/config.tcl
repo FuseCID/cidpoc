@@ -6,8 +6,7 @@
 package require rest
 package require json
 
-set scriptDir [file dirname [info script]]
-set targetDir [file normalize $scriptDir/target]
+set targetDir [file normalize [pwd]/target]
 
 proc configMain { argv } {
     variable targetDir
@@ -155,6 +154,34 @@ proc configTreeByBuildId { buildId } {
     dict set config dependencies [dict values $snapdeps]
 
     return $config
+}
+
+proc logDebug { msg } {
+    log 4 $msg
+}
+
+proc logInfo { msg } {
+    log 3 $msg
+}
+
+proc logWarn { msg } {
+    log 2 $msg
+}
+
+proc logError { msg } {
+    log 1 $msg
+}
+
+proc log { level msg } {
+    if { $level >= 4 } {
+	puts "Debug: $msg"
+    } elseif { $level >= 3 } {
+	puts "Info: $msg"
+    } elseif { $level >= 2 } {
+	puts "Warn: $msg"
+    } elseif { $level >= 1 } {
+	puts "Error: $msg"
+    }
 }
 
 proc flattenConfig { config { result ""} } {
