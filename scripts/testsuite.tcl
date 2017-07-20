@@ -63,7 +63,7 @@ proc doModify { } {
     }
 
     set vcsUrl [dict get $config $projId "vcsUrl"]
-    set workDir [gitCheckout $projId $vcsUrl "master"]
+    set workDir [gitCloneOrCheckout $projId $vcsUrl]
 
     set lines [list]
 
@@ -172,7 +172,7 @@ proc promptForString {prompt {default ""}} {
 proc resetProject { projId vcsUrl vcsRef offset branches } {
     puts "\nProcessing $projId"
 
-    gitCheckout $projId $vcsUrl
+    gitCloneOrCheckout $projId $vcsUrl
     catch { exec git fetch origin --tags }
 
     # Delete all other tags
@@ -186,7 +186,7 @@ proc resetProject { projId vcsUrl vcsRef offset branches } {
     set revs [exec git log --format="%h" --reverse --ancestry-path $vcsRef^..HEAD]
     set rev [lindex $revs $offset]
     foreach { branch } $branches {
-	gitSimpleCheckout $projId $branch
+	gitCheckout $projId $branch
 	catch { exec git reset --hard $rev }
 	if { $branch eq "master" } {
 	    catch { exec git commit --amend --no-edit }

@@ -63,9 +63,9 @@ proc verifyConfig { config } {
 	    # for each dependency get the pomVersion
 	    foreach { depName } $dependencies {
 		set pomVersion [dict get $recipe $depName "pomVersion"]
-		# get the corresponding version from pomProps
-		set propName [lindex [dict get $conf "pomProps" $depName] 0]
-		set propVersion [lindex [dict get $conf "pomProps" $depName] 1]
+		# get the corresponding version from pomDeps
+		set propName [lindex [dict get $conf "pomDeps" $depName] 0]
+		set propVersion [lindex [dict get $conf "pomDeps" $depName] 1]
 		# verify that the two versions are equal
 		if { $propVersion ne $pomVersion } {
 		    lappend problems "Make $key dependent on $depName ($pomVersion)"
@@ -75,11 +75,10 @@ proc verifyConfig { config } {
     }
 
     if  { [llength $problems] > 0 } {
-	puts "\nThis configuration is not consistent\n"
+	logError "\nThis configuration is not consistent\n"
 	foreach { prob } $problems {
-	    puts $prob
+	    logError $prob
 	}
-	puts ""
 	return 0
     }
 
@@ -100,60 +99,270 @@ proc configTreeByBuildType { buildType } {
 proc configTreeByBuildId { buildId } {
 
     set xml [teamcityGET /app/rest/builds/id:$buildId]
-    set node [selectNode $xml {/build}]
-    set revNode [$node selectNodes {revisions/revision}]
+    set rootNode [selectNode $xml {/build}]
+    set revNode [$rootNode selectNodes {revisions/revision}]
     set vcsRootId [[$revNode selectNodes vcs-root-instance] @id]
 
     # Set project config values
-    dict set config projId [[$node selectNodes buildType] @projectId]
+    dict set config projId [[$rootNode selectNodes buildType] @projectId]
+    dict set config buildNumber [$rootNode @number]
     dict set config vcsUrl [selectRootUrl $vcsRootId]
     dict set config vcsTargetBranch "master"
     dict set config vcsBranch [string range [$revNode @vcsBranchName] 11 end]
     dict set config vcsCommit [string range [$revNode @version] 0 6]
-    dict set config vcsCommit [string range [$revNode @version] 0 6]
 
     # Checkout this project
     dict with config {
-	set workDir [gitCheckout $projId $vcsUrl $vcsBranch]
+	set workDir [gitCloneOrCheckout $projId $vcsUrl $vcsBranch]
 	gitVerifyHeadRevision $projId $vcsBranch $vcsCommit
     }
 
-    dict set config pomVersion [pomValue $workDir/pom.xml {mvn:version}]
-    dict set config buildNumber [$node @number]
+    dict set config vcsSubject [gitGetSubject [dict get $config "vcsCommit"]]
+    dict set config vcsTagName ""
 
     # Collect the list of snapshot dependencies
-    set snapdeps [dict create]
-    foreach { depNode } [$node selectNodes {snapshot-dependencies/build}] {
+    set dependencies [list]
+    foreach { depNode } [$rootNode selectNodes {snapshot-dependencies/build}] {
 	set depconf [configTreeByBuildId [$depNode @id]]
-	dict set snapdeps [dict get $depconf "projId"] $depconf
+	lappend dependencies $depconf
+	cd $workDir
     }
+    dict set config dependencies $dependencies
+
+    # Set the current POM version
+    dict set config pomVersion [pomValue $workDir/pom.xml {mvn:version}]
 
     # Collect the POM property names for each snapshot dependency
-    set pomProps [dict create]
-    if { [dict size $snapdeps] > 0 } {
-	set propNode [$node selectNodes {properties/property[@name="cid.pom.dependency.property.names"]}]
+    set pomDepsParam [list]
+    set pomDeps [dict create]
+    if { [llength $dependencies] > 0 } {
+	set propNode [$rootNode selectNodes {properties/property[@name="cid.pom.dependency.property.names"]}]
 
 	# Check if the required parameter exists
 	if { $propNode eq "" } {
-	    puts "\nProvide parameter 'cid.pom.dependency.property.names' with format"
-	    puts {   [projId] [POM property name] [projId] [POM property name] ...}
-	    puts ""
+	    logError "\nProvide parameter 'cid.pom.dependency.property.names' with format"
+	    logError {   [projId] [POM property name] [projId] [POM property name] ...}
 	    error "Cannot obtain mapping for dependent project versions"
 	}
-	set props [$propNode @value]
-	foreach { key } [dict keys $snapdeps] {
-	    if { [catch {set name [dict get $props $key]}] } {
-		error "Cannot obtain mapping for $key in '$props'"
+
+	set pomDepsParam [$propNode @value]
+	set pomDeps [getPOMDependencies $config $pomDepsParam]
+    }
+    dict set config pomDepsParam $pomDepsParam
+    dict set config pomDeps $pomDeps
+
+    # Set the last applicable tag name
+    dict set config vcsTagName [getApplicableTagName $config]
+
+    # Make dependencies come last
+    dict unset config dependencies
+    dict set config dependencies $dependencies
+	
+    return $config
+}
+
+proc getApplicableTagName { config } {
+
+    set projId [dict get $config "projId"]
+    set headRev [gitGetHash HEAD]
+    set subject [gitGetSubject HEAD]
+    set lastAvailableTag [gitLastAvailableTag]
+    set tagRev [gitGetHash $lastAvailableTag]
+    set dependencies [dict get $config "dependencies"]
+
+    logDebug "Last available tag in $projId: $lastAvailableTag ($tagRev)"
+    logDebug "HEAD is at: $subject ($headRev)"
+
+    # If HEAD points to a maven release, we use the associated tag
+    if { [string match "* prepare for next *" $subject] } {
+	logDebug "HEAD points to maven release"
+	return $lastAvailableTag
+    }
+
+    # If the tag is reachable from HEAD
+    if { [gitIsReachable $tagRev $headRev] } {
+
+	logDebug "Walk back from HEAD"
+
+	set auxRev [gitGetHash $headRev]
+	set subject [gitGetSubject $auxRev]
+
+	# Walk back, processing our own upgrade commits
+	while { $auxRev ne $tagRev } {
+	    logDebug "$subject ($auxRev)"
+	    if { ![string match "?fuse-cid] Upgrade * to *" $subject] && ![string match "* prepare for next *" $subject] } {
+		logDebug "Found user commit: $subject ($auxRev)"
+		return ""
 	    }
-	    dict set pomProps $key $name [pomValue $workDir/pom.xml mvn:properties/mvn:$name]
+	    set auxRev [gitGetHash $auxRev^]
+	    set subject [gitGetSubject $auxRev]
+	}
+    } elseif { ![gitIsReachable $headRev $tagRev] } {
+	logWarn "HEAD not reachable from tag $lastAvailableTag"
+	return ""
+    }
+
+    logDebug "Verify last available tag: $lastAvailableTag"
+
+    # Checkout the last available tag and obtain the POM dependencies
+    gitCheckout $projId $tagRev
+    set pomDepsParam [dict get $config "pomDepsParam"]
+    set pomDeps [getPOMDependencies $config $pomDepsParam]
+	
+    logDebug "POM dependencies: $pomDeps"
+
+    # The tag is not usable if it does not match the dependency versions
+    foreach { depconf } $dependencies {
+	set depId [dict get $depconf "projId"]
+	set tagName [dict get $depconf "vcsTagName"]
+	logDebug "Tag in dependency $depId: $tagName"
+	if { ![dict exists $pomDeps $depId] } {
+	    logDebug "POM dependencies do not contain an entry for: $depId"
+	    return ""
+	}
+	set pomTag [lindex [dict get $pomDeps $depId] 1]
+	if { $tagName ne $pomTag } {
+	    logDebug "Non-matching tags"
+	    return ""
 	}
     }
-    dict set config pomProps $pomProps
 
-    # Set the list of snapshot dependencies
-    dict set config dependencies [dict values $snapdeps]
+    logDebug "Ok to use tag: $lastAvailableTag"
+    return $lastAvailableTag
+}
 
-    return $config
+proc getPOMDependencies { proj depsParam } {
+    set pomDeps [dict create]
+    foreach { depconf } [dict get $proj "dependencies"] {
+	set depId [dict get $depconf "projId"]
+	if { [catch {set name [dict get $depsParam $depId]}] } {
+	    error "Cannot obtain mapping for $depId in '$depsParam'"
+	}
+	dict set pomDeps $depId $name [pomValue [pwd]/pom.xml mvn:properties/mvn:$name]
+    }
+    return $pomDeps
+}
+
+proc flattenConfig { config { result ""} } {
+    set projId [dict get $config "projId"]
+    if { [dict exists $result $projId] == 0 } {
+	set depids [list]
+	foreach { snap } [dict get $config "dependencies"] {
+	    lappend depids [dict get $snap "projId"]
+	    set result [flattenConfig $snap $result]
+	}
+	dict append result $projId [dict replace $config "dependencies" $depids]
+    }
+    return $result
+}
+
+# Checkout the specified branch and change to the resulting workdir
+proc gitCheckout { projId rev } {
+    variable targetDir
+    cd [file normalize $targetDir/checkout/$projId]
+    catch { exec git checkout $rev }
+    return [pwd]
+}
+
+# Clone or checkout the specified branch and change to the resulting workdir
+proc gitCloneOrCheckout { projId vcsUrl { vcsBranch "master" } } {
+    variable targetDir
+    set workDir [file normalize $targetDir/checkout/$projId]
+    if { [file exists $workDir] } {
+	cd $workDir
+	catch { exec git clean --force } res
+	catch { exec git fetch --force origin } res
+	catch { exec git checkout $vcsBranch } res
+	catch { exec git reset --hard origin/$vcsBranch } res
+    } else {
+	file mkdir $workDir/..
+	if { [catch { exec git clone -b $vcsBranch $vcsUrl $workDir } res] } {
+	    logInfo $res
+	}
+	cd $workDir
+    }
+    return $workDir
+}
+
+proc gitCommit { msg } {
+    logInfo "Commit: \[fuse-cid] $msg"
+    exec git commit -m "\[fuse-cid] $msg"
+}
+
+proc gitGetHash { rev } {
+    return [exec git log -n 1 --pretty=%h $rev]
+}
+
+proc gitGetSubject { rev } {
+    return [exec git log -n 1 --pretty=%s $rev]
+}
+
+proc gitIsReachable { target from } {
+    set revs [split [exec git rev-list --reverse $target..$from]]
+    if { [llength $revs] < 1 } {
+	return 0
+    }
+    set rev [lindex $revs 0]
+    return [expr { [gitGetHash $target] eq [gitGetHash $rev^] }]
+}
+
+proc gitLastAvailableTag { } {
+    catch { exec git fetch origin --tags } res
+    set tagList [exec git tag]
+    set tagName [lindex $tagList [expr { [llength $tagList] - 1 }]]
+    return $tagName
+}
+
+proc gitNextAvailableTag { pomVersion } {
+    set tagName [nextVersion $pomVersion]
+    set tagList [exec git tag]
+    while { [lsearch $tagList $tagName] >= 0 } {
+	set tagName [nextVersion $tagName]
+    }
+    return $tagName
+}
+
+proc gitMerge { projId target source } {
+    gitSimpleCheckout $projId $target
+    exec git merge --ff-only $source
+}
+
+proc gitPush { branch } {
+    logInfo "git push origin $branch"
+
+    # A successful push may still result in a non-zero return
+    if { [catch { exec git push origin $branch } res] } {
+	foreach { line} [split $res "\n"] {
+	    if { [string match "error: *" $line] || [string match "fatal: *" $line]  } {
+		error $res
+	    }
+	}
+	logInfo $res
+    }
+}
+
+proc gitReleaseBranchCreate { tagName } {
+    set relBranch "tmp-$tagName"
+    catch { exec git branch $relBranch }
+    catch { exec git checkout $relBranch } res; logInfo $res
+    return $relBranch
+}
+
+proc gitReleaseBranchDelete { relBranch curBranch } {
+    catch { exec git checkout --force $curBranch }
+    catch { exec git push origin --delete $relBranch }
+    catch { exec git branch -D $relBranch }
+}
+
+proc gitTag { tagName } {
+    exec git tag -a $tagName -m "\[fuse-cid] $tagName"
+}
+
+proc gitVerifyHeadRevision { projId vcsBranch vcsCommit } {
+    set headRev [string trim [exec git log --format=%h -n 1]]
+    if { $vcsCommit ne $headRev } {
+	error "Expected commit in '$projId' branch '$vcsBranch' is '$vcsCommit', but we have '$headRev'"
+    }
 }
 
 proc logDebug { msg } {
@@ -175,14 +384,11 @@ proc logError { msg } {
 proc log { num msg } {
     variable argv
 
-    set debugLevel [dict create "debug" 4 "info" 3 "warn" 2 "error" 1]
     set debugPrefix [dict create 4 "Debug: " 3 "" 2 "Warn: " 1 "Error: "]
-    
-    set param [string tolower [expr { [dict exists $argv "-debug"] ? [dict get $argv "-debug"] : "info" }]]
-    set level [dict get $debugLevel $param]
+    set level [string tolower [expr { [dict exists $argv "-debug"] ? [dict get $argv "-debug"] : 3 }]]
 
     if { $num <= $level } {
-	    
+
 	# Process leading white space
 	set trim [string trim $msg]
 	set idx [string first $trim $msg]
@@ -190,48 +396,8 @@ proc log { num msg } {
 	    puts -nonewline [string range $msg 0 [expr { $idx -1 }]]
 	    set msg [string range $msg $idx end]
 	}
-	
+
 	puts "[dict get $debugPrefix $num]$msg"
-    }
-}
-
-proc flattenConfig { config { result ""} } {
-    set projId [dict get $config "projId"]
-    if { [dict exists $result $projId] == 0 } {
-	set depids [list]
-	foreach { snap } [dict get $config "dependencies"] {
-	    lappend depids [dict get $snap "projId"]
-	    set result [flattenConfig $snap $result]
-	}
-	dict append result $projId [dict replace $config "dependencies" $depids]
-    }
-    return $result
-}
-
-# Checkout or clone the specified branch and change to the resulting workdir
-proc gitCheckout { projId vcsUrl { vcsBranch "master" } } {
-    variable targetDir
-    set workDir [file normalize $targetDir/checkout/$projId]
-    if { [file exists $workDir] } {
-	cd $workDir
-	catch { exec git clean --force } res
-	catch { exec git fetch --force origin } res
-	catch { exec git checkout $vcsBranch } res
-	catch { exec git reset --hard origin/$vcsBranch } res
-    } else {
-	file mkdir $workDir/..
-	if { [catch { exec git clone -b $vcsBranch $vcsUrl $workDir } res] } {
-	    logInfo $res
-	}
-	cd $workDir
-    }
-    return $workDir
-}
-
-proc gitVerifyHeadRevision { projId vcsBranch vcsCommit } {
-    set headRev [string trim [exec git log --format=%h -n 1]]
-    if { $vcsCommit ne $headRev } {
-	error "Expected commit in '$projId' branch '$vcsBranch' is '$vcsCommit', but we have '$headRev'"
     }
 }
 
@@ -278,7 +444,7 @@ proc config2json { dict {level 0} }  {
     set result "\{"
     foreach { key } [dict keys $dict] {
 	set val [dict get $dict $key]
-	set valIsDict [expr { $key eq "pomProps" }]
+	set valIsDict [expr { $key eq "pomDeps" }]
 	set valIsListOfDict [expr { $key eq "dependencies" }]
 
 	if { $key ne [lindex $dict 0] } { append result "," }
