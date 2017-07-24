@@ -3,9 +3,8 @@
 
 if { $argc < 5 } {
     puts "Usage:"
-    puts "   tclsh switch.tcl -baseUrl baseUrl -cmd \[config|prmerge|prepare|release] args"
+    puts "   tclsh switch.tcl -baseUrl baseUrl -cmd \[config|prmerge|verify|prepare|release] args"
     puts "   e.g. tclsh switch.tcl -baseUrl https://raw.githubusercontent.com/FuseCID/cidpoc/master/scripts -cmd config args"
-
     return 1
 }
 
@@ -39,7 +38,6 @@ switch $cmd {
         releaseMain $args
     }
     default {
-        puts "Unknown command: $cmd"
-        exit 1
+        error "Unknown command: $cmd"
     }
 }

@@ -17,42 +17,62 @@ dict set config ProjE vcsUrl "git@github.com:FuseCID/cidpocE.git"
 dict set config ProjE vcsRef 1.1.0 1 master next
 
 proc mainMenu { argv } {
-    while 1 {
 
-        # Print the target env header
-        puts "\nFuse CID"
-        puts "========\n"
+    if { [dict exists $argv "-cmd"] } {
+        doCommand [dict get $argv "-cmd"]
+    } else {
+        while 1 {
 
-        puts "\[1] Config"
-        puts "\[2] Modify"
-        puts "\[3] Release"
-        puts "\[4] Reset"
-        puts "\[5] Exit"
-        switch [promptForInteger "\n>" 1 5 1] 1 {
-            doConfig
-        } 2 {
-            doModify
-        } 3 {
-            doRelease
-        } 4 {
-            doReset
-        } 5 {
-            puts "\nGood Bye!"
-            exit 0
+            # Print the target env header
+            puts "\nFuse CID"
+            puts "========\n"
+
+            puts "\[1] Config"
+            puts "\[2] Modify"
+            puts "\[3] Prepare"
+            puts "\[4] Release"
+            puts "\[5] Reset"
+            puts "\[6] Exit"
+            switch [promptForInteger "\n>" 1 6 1] {
+                1 { set cmd "config" }
+                2 { set cmd "modify" }
+                3 { set cmd "prepare" }
+                4 { set cmd "release" }
+                5 { set cmd "reset" }
+                6 {
+                    puts "Good Bye!"
+                    exit 0
+                }
+            }
         }
     }
 }
 
+proc doCommand { cmd } {
+    switch $cmd {
+        "config" { doConfig }
+        "modify" { doModify }
+        "prepare" { doPrepare }
+        "release" { doRelease }
+        "reset" { doReset }
+        default { error "Invalid command: $cmd" }
+    }
+}
+
 proc doConfig { } {
-    set buildType [promptForString "\nBuildType: "]
-    set config [configTreeByBuildType $buildType]
+    set config [configTreeByBuildType [getBuildType]]
     puts [config2json $config]
 }
 
 proc doModify { } {
     variable config
+    variable argv
 
-    set cap [promptForString "\nCapability: "]
+    if { [dict exists $argv "-cap"] } {
+        set cap [dict get $argv "-cap"]
+    } else {
+        set cap [promptForString "\nCapability: "]
+    }
     set cap "[string toupper [string range $cap 0 0]][string range $cap 1 end]"
     set char [string range $cap 0 0]
     set projId "Proj$char"
@@ -63,7 +83,7 @@ proc doModify { } {
     }
 
     set vcsUrl [dict get $config $projId "vcsUrl"]
-    set workDir [gitCloneOrCheckout $projId $vcsUrl]
+    set workDir [gitClone $projId $vcsUrl]
 
     set lines [list]
 
@@ -79,7 +99,7 @@ proc doModify { } {
     set msg "$prov => $cap"
     puts $msg
 
-    if { ![promptForBoolean "Make this change: " 1] } {
+    if { ![dict exists $argv "-cmd"] && ![promptForBoolean "Make this change: " 1] } {
         return;
     }
 
@@ -96,16 +116,21 @@ proc doModify { } {
     catch { exec git push origin } res; puts $res
 }
 
+proc doPrepare { } {
+    set config [configTreeByBuildType [getBuildType]]
+    prepare $config
+}
+
 proc doRelease { } {
-    set buildType [promptForString "\nBuildType: "]
-    set config [configTreeByBuildType $buildType]
+    set config [configTreeByBuildType [getBuildType]]
     release $config
 }
 
 proc doReset { } {
     variable config
+    variable argv
 
-    if { ![promptForBoolean "Reset all projects" 0] } {
+    if { ![dict exists $argv "-cmd"] && ![promptForBoolean "Reset all projects" 0] } {
         return;
     }
 
@@ -118,6 +143,16 @@ proc doReset { } {
             }
         }
     }
+}
+
+proc getBuildType { } {
+    variable argv
+    if { [dict exists $argv "-buildType"] } {
+        set buildType [dict get $argv "-buildType"]
+    } else {
+        set buildType [promptForString "\nBuildType: "]
+    }
+    return $buildType
 }
 
 # Private ========================
@@ -172,7 +207,7 @@ proc promptForString {prompt {default ""}} {
 proc resetProject { projId vcsUrl vcsRef offset branches } {
     puts "\nProcessing $projId"
 
-    gitCloneOrCheckout $projId $vcsUrl
+    gitClone $projId $vcsUrl
     catch { exec git fetch origin --tags }
 
     # Delete all other tags
@@ -183,6 +218,14 @@ proc resetProject { projId vcsUrl vcsRef offset branches } {
             catch { exec git tag -d $tag }
         }
     }
+
+    # Delete release branches
+    foreach branch [exec git branch -r] {
+        if { [string match "origin/release/*" $branch ] } {
+            gitDeleteBranch master [string range $branch 7 end]
+        }
+    }
+
     set revs [exec git log --format="%h" --reverse --ancestry-path $vcsRef^..HEAD]
     set rev [lindex $revs $offset]
     foreach { branch } $branches {

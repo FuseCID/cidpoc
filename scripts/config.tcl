@@ -107,18 +107,22 @@ proc configTreeByBuildId { buildId } {
     dict set config projId [[$rootNode selectNodes buildType] @projectId]
     dict set config buildNumber [$rootNode @number]
     dict set config vcsUrl [selectRootUrl $vcsRootId]
-    dict set config vcsTargetBranch "master"
+    dict set config vcsMasterBranch [getBuildParameter $rootNode "cid.master.branch"]
+    dict set config vcsDevBranch [getBuildParameter $rootNode "cid.dev.branch"]
     dict set config vcsBranch [string range [$revNode @vcsBranchName] 11 end]
     dict set config vcsCommit [string range [$revNode @version] 0 6]
 
     # Checkout this project
     dict with config {
-        set workDir [gitCloneOrCheckout $projId $vcsUrl $vcsBranch]
-        gitVerifyHeadRevision $projId $vcsBranch $vcsCommit
+        set workDir [gitClone $projId $vcsUrl $vcsBranch]
+        gitCheckout $projId $vcsCommit
     }
 
     dict set config vcsSubject [gitGetSubject [dict get $config "vcsCommit"]]
     dict set config vcsTagName ""
+
+    # Get the release command
+    dict set config mvnExtraArgs [getBuildParameter $rootNode "cid.mvn.extra.args" false]
 
     # Collect the list of snapshot dependencies
     set dependencies [list]
@@ -136,16 +140,7 @@ proc configTreeByBuildId { buildId } {
     set pomDepsParam [list]
     set pomDeps [dict create]
     if { [llength $dependencies] > 0 } {
-        set propNode [$rootNode selectNodes {properties/property[@name="cid.pom.dependency.property.names"]}]
-
-        # Check if the required parameter exists
-        if { $propNode eq "" } {
-            logError "\nProvide parameter 'cid.pom.dependency.property.names' with format"
-            logError {   [projId] [POM property name] [projId] [POM property name] ...}
-            error "Cannot obtain mapping for dependent project versions"
-        }
-
-        set pomDepsParam [$propNode @value]
+        set pomDepsParam [getBuildParameter $rootNode "cid.pom.dependency.property.names"]
         set pomDeps [getPOMDependencies $config $pomDepsParam]
     }
     dict set config pomDepsParam $pomDepsParam
@@ -161,12 +156,31 @@ proc configTreeByBuildId { buildId } {
     return $config
 }
 
+proc getBuildParameter { rootNode name {required true}} {
+    set propNode [$rootNode selectNodes {properties/property[@name=$name]}]
+    if { $propNode eq "" } {
+        if { $required } {
+            error "Cannot obtain build parameter: $name"
+        } else {
+            return ""
+        }
+    }
+    return [$propNode @value]
+}
+
 proc getApplicableTagName { config } {
 
     set projId [dict get $config "projId"]
     set headRev [gitGetHash HEAD]
     set subject [gitGetSubject HEAD]
     set lastAvailableTag [gitLastAvailableTag]
+
+    # If HEAD points to a maven release, we use the associated tag
+    if { $lastAvailableTag eq "" } {
+        logWarn "Cannot find any tag in $projId"
+        return ""
+    }
+
     set tagRev [gitGetHash $lastAvailableTag]
     set dependencies [dict get $config "dependencies"]
 
@@ -256,7 +270,7 @@ proc flattenConfig { config { result ""} } {
     return $result
 }
 
-# Checkout the specified branch and change to the resulting workdir
+# Checkout the specified revision and change to the resulting workdir
 proc gitCheckout { projId rev } {
     variable targetDir
     cd [file normalize $targetDir/checkout/$projId]
@@ -265,7 +279,7 @@ proc gitCheckout { projId rev } {
 }
 
 # Clone or checkout the specified branch and change to the resulting workdir
-proc gitCloneOrCheckout { projId vcsUrl { vcsBranch "master" } } {
+proc gitClone { projId vcsUrl { vcsBranch "master" } } {
     variable targetDir
     set workDir [file normalize $targetDir/checkout/$projId]
     if { [file exists $workDir] } {
@@ -289,6 +303,19 @@ proc gitCommit { msg } {
     exec git commit -m "\[fuse-cid] $msg"
 }
 
+proc gitCreateBranch { newBranch } {
+    catch { exec git checkout -B $newBranch } res;
+    logInfo $res
+    return $newBranch
+}
+
+proc gitDeleteBranch { curBranch delBranch } {
+    logInfo "Delete branch: $delBranch"
+    catch { exec git checkout --force $curBranch }
+    catch { exec git push origin --delete $delBranch }
+    catch { exec git branch -D $delBranch }
+}
+
 proc gitGetHash { rev } {
     return [exec git log -n 1 --pretty=%h $rev]
 }
@@ -309,6 +336,7 @@ proc gitIsReachable { target from } {
 proc gitLastAvailableTag { } {
     catch { exec git fetch origin --tags } res
     set tagList [exec git tag]
+    if { [llength $tagList] < 1 } { return "" }
     set tagName [lindex $tagList [expr { [llength $tagList] - 1 }]]
     return $tagName
 }
@@ -323,15 +351,18 @@ proc gitNextAvailableTag { pomVersion } {
 }
 
 proc gitMerge { projId target source } {
-    gitSimpleCheckout $projId $target
-    exec git merge --ff-only $source
+    gitCheckout $projId $target
+    exec git merge $source
 }
 
-proc gitPush { branch } {
-    logInfo "git push origin $branch"
+proc gitPush { rev { force false } } {
+
+    set args [list origin $rev]
+    if { $force } { set args [linsert $args 1 "--force"] }
+    logInfo "git push $args"
 
     # A successful push may still result in a non-zero return
-    if { [catch { exec git push origin $branch } res] } {
+    if { [catch { eval exec git push $args } res] } {
         foreach { line} [split $res "\n"] {
             if { [string match "error: *" $line] || [string match "fatal: *" $line]  } {
                 error $res
@@ -341,28 +372,8 @@ proc gitPush { branch } {
     }
 }
 
-proc gitReleaseBranchCreate { tagName } {
-    set relBranch "tmp-$tagName"
-    catch { exec git branch $relBranch }
-    catch { exec git checkout $relBranch } res; logInfo $res
-    return $relBranch
-}
-
-proc gitReleaseBranchDelete { relBranch curBranch } {
-    catch { exec git checkout --force $curBranch }
-    catch { exec git push origin --delete $relBranch }
-    catch { exec git branch -D $relBranch }
-}
-
 proc gitTag { tagName } {
     exec git tag -a $tagName -m "\[fuse-cid] $tagName"
-}
-
-proc gitVerifyHeadRevision { projId vcsBranch vcsCommit } {
-    set headRev [string trim [exec git log --format=%h -n 1]]
-    if { $vcsCommit ne $headRev } {
-        error "Expected commit in '$projId' branch '$vcsBranch' is '$vcsCommit', but we have '$headRev'"
-    }
 }
 
 proc logDebug { msg } {
@@ -381,13 +392,13 @@ proc logError { msg } {
     log 1 $msg
 }
 
-proc log { num msg } {
+proc log { level msg } {
     variable argv
 
     set debugPrefix [dict create 4 "Debug: " 3 "" 2 "Warn: " 1 "Error: "]
-    set level [string tolower [expr { [dict exists $argv "-debug"] ? [dict get $argv "-debug"] : 3 }]]
+    set maxLevel [string tolower [expr { [dict exists $argv "-debug"] ? [dict get $argv "-debug"] : 3 }]]
 
-    if { $num <= $level } {
+    if { $level <= $maxLevel } {
 
         # Process leading white space
         set trim [string trim $msg]
@@ -397,7 +408,7 @@ proc log { num msg } {
             set msg [string range $msg $idx end]
         }
 
-        puts "[dict get $debugPrefix $num]$msg"
+        puts "[dict get $debugPrefix $level]$msg"
     }
 }
 
