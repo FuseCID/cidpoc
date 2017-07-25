@@ -19,27 +19,27 @@ dict set config ProjE vcsRef 1.1.0 1 master next
 proc mainMenu { argv } {
     while 1 {
 
-	# Print the target env header
-	puts "\nFuse CID"
-	puts "========\n"
+        # Print the target env header
+        puts "\nFuse CID"
+        puts "========\n"
 
-	puts "\[1] Config"
-	puts "\[2] Modify"
-	puts "\[3] Release"
-	puts "\[4] Reset"
-	puts "\[5] Exit"
-	switch [promptForInteger "\n>" 1 5 1] 1 {
-	    doConfig
-	} 2 {
-	    doModify
-	} 3 {
-	    doRelease
-	} 4 {
-	    doReset
-	} 5 {
-	    puts "\nGood Bye!"
-	    exit 0
-	}
+        puts "\[1] Config"
+        puts "\[2] Modify"
+        puts "\[3] Release"
+        puts "\[4] Reset"
+        puts "\[5] Exit"
+        switch [promptForInteger "\n>" 1 5 1] 1 {
+            doConfig
+        } 2 {
+            doModify
+        } 3 {
+            doRelease
+        } 4 {
+            doReset
+        } 5 {
+            puts "\nGood Bye!"
+            exit 0
+        }
     }
 }
 
@@ -58,8 +58,8 @@ proc doModify { } {
     set projId "Proj$char"
 
     if { ![dict exists $config $projId] } {
-	puts "Project does not exist: $projId"
-	return
+        puts "Project does not exist: $projId"
+        return
     }
 
     set vcsUrl [dict get $config $projId "vcsUrl"]
@@ -71,7 +71,7 @@ proc doModify { } {
     set resFile "$workDir/src/main/resources/org/fuse/cidpoc/[string tolower $char]/capreq"
     set fid [open $resFile]
     while { [gets $fid line] >= 0 } {
-	lappend lines $line
+        lappend lines $line
     }
     close $fid
 
@@ -80,14 +80,14 @@ proc doModify { } {
     puts $msg
 
     if { ![promptForBoolean "Make this change: " 1] } {
-	return;
+        return;
     }
 
     # Write lines to capreq
     set fid [open $resFile "w"]
     puts $fid "provides: $cap"
     for { set i 1 } { $i < [llength $lines] } { incr i } {
-	puts $fid [lindex $lines $i]
+        puts $fid [lindex $lines $i]
     }
     close $fid
 
@@ -106,17 +106,17 @@ proc doReset { } {
     variable config
 
     if { ![promptForBoolean "Reset all projects" 0] } {
-	return;
+        return;
     }
 
     dict for { projId proj } $config {
-	dict with proj {
-	    dict for { rev data } $vcsRef {
-		set offset [lindex $data 0]
-		set branches [lindex $data 1]
-		resetProject $projId $vcsUrl $rev $offset $branches
-	    }
-	}
+        dict with proj {
+            dict for { rev data } $vcsRef {
+                set offset [lindex $data 0]
+                set branches [lindex $data 1]
+                resetProject $projId $vcsUrl $rev $offset $branches
+            }
+        }
     }
 }
 
@@ -124,48 +124,48 @@ proc doReset { } {
 
 proc promptForBoolean {prompt default} {
     while 1 {
-	if { bool($default) } {
-	    puts -nonewline "$prompt (Y/n) "
-	} else {
-	    puts -nonewline "$prompt (y/N) "
-	}
-	flush stdout
-	gets stdin ch
-	if {[string is true -strict [string tolower $ch]] } {
-	    return 1
-	} elseif {[string is false -strict [string tolower $ch]]} {
-	    return 0
-	} elseif { $ch == "" } {
-	    return $default
-	}
+        if { bool($default) } {
+            puts -nonewline "$prompt (Y/n) "
+        } else {
+            puts -nonewline "$prompt (y/N) "
+        }
+        flush stdout
+        gets stdin ch
+        if {[string is true -strict [string tolower $ch]] } {
+            return 1
+        } elseif {[string is false -strict [string tolower $ch]]} {
+            return 0
+        } elseif { $ch == "" } {
+            return $default
+        }
     }
 }
 
 proc promptForInteger {prompt min max {default 0}} {
     while 1 {
-	puts -nonewline "$prompt "
-	if { $default != 0 } { puts -nonewline "\[$default]: " }
-	flush stdout
-	gets stdin ch
-	if {$min <= $ch && $ch <= $max} {
-	    return $ch
-	} elseif {$ch == ""} {
-	    return $default
-	}
+        puts -nonewline "$prompt "
+        if { $default != 0 } { puts -nonewline "\[$default]: " }
+        flush stdout
+        gets stdin ch
+        if {$min <= $ch && $ch <= $max} {
+            return $ch
+        } elseif {$ch == ""} {
+            return $default
+        }
     }
 }
 
 proc promptForString {prompt {default ""}} {
     while 1 {
-	puts -nonewline "$prompt "
-	if { $default != "" } { puts -nonewline "\[$default]: " }
-	flush stdout
-	gets stdin line
-	if { $line != "" } {
-	    return $line
-	} elseif { $default != "" } {
-	    return $default
-	}
+        puts -nonewline "$prompt "
+        if { $default != "" } { puts -nonewline "\[$default]: " }
+        flush stdout
+        gets stdin line
+        if { $line != "" } {
+            return $line
+        } elseif { $default != "" } {
+            return $default
+        }
     }
 }
 
@@ -177,22 +177,22 @@ proc resetProject { projId vcsUrl vcsRef offset branches } {
 
     # Delete all other tags
     foreach { tag } [exec git tag] {
-	if { $tag ne $vcsRef } {
-	    puts "Deleting tag $tag"
-	    catch { exec git push origin :refs/tags/$tag }
-	    catch { exec git tag -d $tag }
-	}
+        if { $tag ne $vcsRef } {
+            puts "Deleting tag $tag"
+            catch { exec git push origin :refs/tags/$tag }
+            catch { exec git tag -d $tag }
+        }
     }
     set revs [exec git log --format="%h" --reverse --ancestry-path $vcsRef^..HEAD]
     set rev [lindex $revs $offset]
     foreach { branch } $branches {
-	gitCheckout $projId $branch
-	catch { exec git reset --hard $rev }
-	if { $branch eq "master" } {
-	    catch { exec git commit --amend --no-edit }
-	    set rev [exec git rev-parse HEAD]
-	}
-	catch { exec git push origin -f $branch } res; puts $res
+        gitCheckout $projId $branch
+        catch { exec git reset --hard $rev }
+        if { $branch eq "master" } {
+            catch { exec git commit --amend --no-edit }
+            set rev [exec git rev-parse HEAD]
+        }
+        catch { exec git push origin -f $branch } res; puts $res
     }
 }
 

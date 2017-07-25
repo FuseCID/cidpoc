@@ -12,11 +12,11 @@ proc configMain { argv } {
     variable targetDir
 
     if { [llength $argv] < 2 } {
-	puts "Usage:"
-	puts "  tclsh config.tcl \[-buildType buildType|-buildId buildId] \[-tcuser username] \[-tcpass password] \[-host host]\n"
-	puts "  e.g. tclsh config.tcl -buildType ProjCNext -host http://52.214.125.98:8111"
-	puts "  e.g. tclsh config.tcl -buildId 363"
-	return 1
+        puts "Usage:"
+        puts "  tclsh config.tcl \[-buildType buildType|-buildId buildId] \[-tcuser username] \[-tcpass password] \[-host host]\n"
+        puts "  e.g. tclsh config.tcl -buildType ProjCNext -host http://52.214.125.98:8111"
+        puts "  e.g. tclsh config.tcl -buildId 363"
+        return 1
     }
 
     set config [configTree $argv ]
@@ -43,11 +43,11 @@ proc configMain { argv } {
 proc configTree { argv } {
 
     if { [dict exists $argv "-buildId"] } {
-	set buildId [dict get $argv "-buildId"]
-	return [configTreeByBuildId $buildId]
+        set buildId [dict get $argv "-buildId"]
+        return [configTreeByBuildId $buildId]
     } else {
-	set buildType [dict get $argv "-buildType"]
-	return [configTreeByBuildType $buildType]
+        set buildType [dict get $argv "-buildType"]
+        return [configTreeByBuildType $buildType]
     }
 
 }
@@ -59,27 +59,27 @@ proc verifyConfig { config } {
     set problems [list]
     set recipe [flattenConfig $config ]
     dict for { key conf} $recipe {
-	dict with conf {
-	    # for each dependency get the pomVersion
-	    foreach { depName } $dependencies {
-		set pomVersion [dict get $recipe $depName "pomVersion"]
-		# get the corresponding version from pomDeps
-		set propName [lindex [dict get $conf "pomDeps" $depName] 0]
-		set propVersion [lindex [dict get $conf "pomDeps" $depName] 1]
-		# verify that the two versions are equal
-		if { $propVersion ne $pomVersion } {
-		    lappend problems "Make $key dependent on $depName ($pomVersion)"
-		}
-	    }
-	}
+        dict with conf {
+            # for each dependency get the pomVersion
+            foreach { depName } $dependencies {
+                set pomVersion [dict get $recipe $depName "pomVersion"]
+                # get the corresponding version from pomDeps
+                set propName [lindex [dict get $conf "pomDeps" $depName] 0]
+                set propVersion [lindex [dict get $conf "pomDeps" $depName] 1]
+                # verify that the two versions are equal
+                if { $propVersion ne $pomVersion } {
+                    lappend problems "Make $key dependent on $depName ($pomVersion)"
+                }
+            }
+        }
     }
 
     if  { [llength $problems] > 0 } {
-	logError "\nThis configuration is not consistent\n"
-	foreach { prob } $problems {
-	    logError $prob
-	}
-	return 0
+        logError "\nThis configuration is not consistent\n"
+        foreach { prob } $problems {
+            logError $prob
+        }
+        return 0
     }
 
     return 1
@@ -113,8 +113,8 @@ proc configTreeByBuildId { buildId } {
 
     # Checkout this project
     dict with config {
-	set workDir [gitCloneOrCheckout $projId $vcsUrl $vcsBranch]
-	gitVerifyHeadRevision $projId $vcsBranch $vcsCommit
+        set workDir [gitCloneOrCheckout $projId $vcsUrl $vcsBranch]
+        gitVerifyHeadRevision $projId $vcsBranch $vcsCommit
     }
 
     dict set config vcsSubject [gitGetSubject [dict get $config "vcsCommit"]]
@@ -123,9 +123,9 @@ proc configTreeByBuildId { buildId } {
     # Collect the list of snapshot dependencies
     set dependencies [list]
     foreach { depNode } [$rootNode selectNodes {snapshot-dependencies/build}] {
-	set depconf [configTreeByBuildId [$depNode @id]]
-	lappend dependencies $depconf
-	cd $workDir
+        set depconf [configTreeByBuildId [$depNode @id]]
+        lappend dependencies $depconf
+        cd $workDir
     }
     dict set config dependencies $dependencies
 
@@ -136,17 +136,17 @@ proc configTreeByBuildId { buildId } {
     set pomDepsParam [list]
     set pomDeps [dict create]
     if { [llength $dependencies] > 0 } {
-	set propNode [$rootNode selectNodes {properties/property[@name="cid.pom.dependency.property.names"]}]
+        set propNode [$rootNode selectNodes {properties/property[@name="cid.pom.dependency.property.names"]}]
 
-	# Check if the required parameter exists
-	if { $propNode eq "" } {
-	    logError "\nProvide parameter 'cid.pom.dependency.property.names' with format"
-	    logError {   [projId] [POM property name] [projId] [POM property name] ...}
-	    error "Cannot obtain mapping for dependent project versions"
-	}
+        # Check if the required parameter exists
+        if { $propNode eq "" } {
+            logError "\nProvide parameter 'cid.pom.dependency.property.names' with format"
+            logError {   [projId] [POM property name] [projId] [POM property name] ...}
+            error "Cannot obtain mapping for dependent project versions"
+        }
 
-	set pomDepsParam [$propNode @value]
-	set pomDeps [getPOMDependencies $config $pomDepsParam]
+        set pomDepsParam [$propNode @value]
+        set pomDeps [getPOMDependencies $config $pomDepsParam]
     }
     dict set config pomDepsParam $pomDepsParam
     dict set config pomDeps $pomDeps
@@ -157,7 +157,7 @@ proc configTreeByBuildId { buildId } {
     # Make dependencies come last
     dict unset config dependencies
     dict set config dependencies $dependencies
-	
+
     return $config
 }
 
@@ -175,31 +175,31 @@ proc getApplicableTagName { config } {
 
     # If HEAD points to a maven release, we use the associated tag
     if { [string match "* prepare for next *" $subject] } {
-	logDebug "HEAD points to maven release"
-	return $lastAvailableTag
+        logDebug "HEAD points to maven release"
+        return $lastAvailableTag
     }
 
     # If the tag is reachable from HEAD
     if { [gitIsReachable $tagRev $headRev] } {
 
-	logDebug "Walk back from HEAD"
+        logDebug "Walk back from HEAD"
 
-	set auxRev [gitGetHash $headRev]
-	set subject [gitGetSubject $auxRev]
+        set auxRev [gitGetHash $headRev]
+        set subject [gitGetSubject $auxRev]
 
-	# Walk back, processing our own upgrade commits
-	while { $auxRev ne $tagRev } {
-	    logDebug "$subject ($auxRev)"
-	    if { ![string match "?fuse-cid] Upgrade * to *" $subject] && ![string match "* prepare for next *" $subject] } {
-		logDebug "Found user commit: $subject ($auxRev)"
-		return ""
-	    }
-	    set auxRev [gitGetHash $auxRev^]
-	    set subject [gitGetSubject $auxRev]
-	}
+        # Walk back, processing our own upgrade commits
+        while { $auxRev ne $tagRev } {
+            logDebug "$subject ($auxRev)"
+            if { ![string match "?fuse-cid] Upgrade * to *" $subject] && ![string match "* prepare for next *" $subject] } {
+                logDebug "Found user commit: $subject ($auxRev)"
+                return ""
+            }
+            set auxRev [gitGetHash $auxRev^]
+            set subject [gitGetSubject $auxRev]
+        }
     } elseif { ![gitIsReachable $headRev $tagRev] } {
-	logWarn "HEAD not reachable from tag $lastAvailableTag"
-	return ""
+        logWarn "HEAD not reachable from tag $lastAvailableTag"
+        return ""
     }
 
     logDebug "Verify last available tag: $lastAvailableTag"
@@ -208,23 +208,23 @@ proc getApplicableTagName { config } {
     gitCheckout $projId $tagRev
     set pomDepsParam [dict get $config "pomDepsParam"]
     set pomDeps [getPOMDependencies $config $pomDepsParam]
-	
+
     logDebug "POM dependencies: $pomDeps"
 
     # The tag is not usable if it does not match the dependency versions
     foreach { depconf } $dependencies {
-	set depId [dict get $depconf "projId"]
-	set tagName [dict get $depconf "vcsTagName"]
-	logDebug "Tag in dependency $depId: $tagName"
-	if { ![dict exists $pomDeps $depId] } {
-	    logDebug "POM dependencies do not contain an entry for: $depId"
-	    return ""
-	}
-	set pomTag [lindex [dict get $pomDeps $depId] 1]
-	if { $tagName ne $pomTag } {
-	    logDebug "Non-matching tags"
-	    return ""
-	}
+        set depId [dict get $depconf "projId"]
+        set tagName [dict get $depconf "vcsTagName"]
+        logDebug "Tag in dependency $depId: $tagName"
+        if { ![dict exists $pomDeps $depId] } {
+            logDebug "POM dependencies do not contain an entry for: $depId"
+            return ""
+        }
+        set pomTag [lindex [dict get $pomDeps $depId] 1]
+        if { $tagName ne $pomTag } {
+            logDebug "Non-matching tags"
+            return ""
+        }
     }
 
     logDebug "Ok to use tag: $lastAvailableTag"
@@ -234,11 +234,11 @@ proc getApplicableTagName { config } {
 proc getPOMDependencies { proj depsParam } {
     set pomDeps [dict create]
     foreach { depconf } [dict get $proj "dependencies"] {
-	set depId [dict get $depconf "projId"]
-	if { [catch {set name [dict get $depsParam $depId]}] } {
-	    error "Cannot obtain mapping for $depId in '$depsParam'"
-	}
-	dict set pomDeps $depId $name [pomValue [pwd]/pom.xml mvn:properties/mvn:$name]
+        set depId [dict get $depconf "projId"]
+        if { [catch {set name [dict get $depsParam $depId]}] } {
+            error "Cannot obtain mapping for $depId in '$depsParam'"
+        }
+        dict set pomDeps $depId $name [pomValue [pwd]/pom.xml mvn:properties/mvn:$name]
     }
     return $pomDeps
 }
@@ -246,12 +246,12 @@ proc getPOMDependencies { proj depsParam } {
 proc flattenConfig { config { result ""} } {
     set projId [dict get $config "projId"]
     if { [dict exists $result $projId] == 0 } {
-	set depids [list]
-	foreach { snap } [dict get $config "dependencies"] {
-	    lappend depids [dict get $snap "projId"]
-	    set result [flattenConfig $snap $result]
-	}
-	dict append result $projId [dict replace $config "dependencies" $depids]
+        set depids [list]
+        foreach { snap } [dict get $config "dependencies"] {
+            lappend depids [dict get $snap "projId"]
+            set result [flattenConfig $snap $result]
+        }
+        dict append result $projId [dict replace $config "dependencies" $depids]
     }
     return $result
 }
@@ -269,17 +269,17 @@ proc gitCloneOrCheckout { projId vcsUrl { vcsBranch "master" } } {
     variable targetDir
     set workDir [file normalize $targetDir/checkout/$projId]
     if { [file exists $workDir] } {
-	cd $workDir
-	catch { exec git clean --force } res
-	catch { exec git fetch --force origin } res
-	catch { exec git checkout $vcsBranch } res
-	catch { exec git reset --hard origin/$vcsBranch } res
+        cd $workDir
+        catch { exec git clean --force } res
+        catch { exec git fetch --force origin } res
+        catch { exec git checkout $vcsBranch } res
+        catch { exec git reset --hard origin/$vcsBranch } res
     } else {
-	file mkdir $workDir/..
-	if { [catch { exec git clone -b $vcsBranch $vcsUrl $workDir } res] } {
-	    logInfo $res
-	}
-	cd $workDir
+        file mkdir $workDir/..
+        if { [catch { exec git clone -b $vcsBranch $vcsUrl $workDir } res] } {
+            logInfo $res
+        }
+        cd $workDir
     }
     return $workDir
 }
@@ -300,7 +300,7 @@ proc gitGetSubject { rev } {
 proc gitIsReachable { target from } {
     set revs [split [exec git rev-list --reverse $target..$from]]
     if { [llength $revs] < 1 } {
-	return 0
+        return 0
     }
     set rev [lindex $revs 0]
     return [expr { [gitGetHash $target] eq [gitGetHash $rev^] }]
@@ -317,7 +317,7 @@ proc gitNextAvailableTag { pomVersion } {
     set tagName [nextVersion $pomVersion]
     set tagList [exec git tag]
     while { [lsearch $tagList $tagName] >= 0 } {
-	set tagName [nextVersion $tagName]
+        set tagName [nextVersion $tagName]
     }
     return $tagName
 }
@@ -332,12 +332,12 @@ proc gitPush { branch } {
 
     # A successful push may still result in a non-zero return
     if { [catch { exec git push origin $branch } res] } {
-	foreach { line} [split $res "\n"] {
-	    if { [string match "error: *" $line] || [string match "fatal: *" $line]  } {
-		error $res
-	    }
-	}
-	logInfo $res
+        foreach { line} [split $res "\n"] {
+            if { [string match "error: *" $line] || [string match "fatal: *" $line]  } {
+                error $res
+            }
+        }
+        logInfo $res
     }
 }
 
@@ -361,7 +361,7 @@ proc gitTag { tagName } {
 proc gitVerifyHeadRevision { projId vcsBranch vcsCommit } {
     set headRev [string trim [exec git log --format=%h -n 1]]
     if { $vcsCommit ne $headRev } {
-	error "Expected commit in '$projId' branch '$vcsBranch' is '$vcsCommit', but we have '$headRev'"
+        error "Expected commit in '$projId' branch '$vcsBranch' is '$vcsCommit', but we have '$headRev'"
     }
 }
 
@@ -389,15 +389,15 @@ proc log { num msg } {
 
     if { $num <= $level } {
 
-	# Process leading white space
-	set trim [string trim $msg]
-	set idx [string first $trim $msg]
-	if { $idx > 0 } {
-	    puts -nonewline [string range $msg 0 [expr { $idx -1 }]]
-	    set msg [string range $msg $idx end]
-	}
+        # Process leading white space
+        set trim [string trim $msg]
+        set idx [string first $trim $msg]
+        if { $idx > 0 } {
+            puts -nonewline [string range $msg 0 [expr { $idx -1 }]]
+            set msg [string range $msg $idx end]
+        }
 
-	puts "[dict get $debugPrefix $num]$msg"
+        puts "[dict get $debugPrefix $num]$msg"
     }
 }
 
@@ -443,36 +443,36 @@ proc config2json { dict {level 0} }  {
     set pad [format "%[expr 3 * $level]s" ""]
     set result "\{"
     foreach { key } [dict keys $dict] {
-	set val [dict get $dict $key]
-	set valIsDict [expr { $key eq "pomDeps" }]
-	set valIsListOfDict [expr { $key eq "dependencies" }]
+        set val [dict get $dict $key]
+        set valIsDict [expr { $key eq "pomDeps" }]
+        set valIsListOfDict [expr { $key eq "dependencies" }]
 
-	if { $key ne [lindex $dict 0] } { append result "," }
+        if { $key ne [lindex $dict 0] } { append result "," }
 
-	# Value is a list of dictionaries
-	if { $valIsListOfDict } {
-	    append result "\n$pad\"$key\": \["
-	    for {set i 0} {$i < [llength $val]} {incr i} {
-		if { $i > 0 } { append result "," }
-		append result [config2json [lindex $val $i] [expr $level + 1]]
-	    }
-	    append result "\]"
-	    continue
-	}
+        # Value is a list of dictionaries
+        if { $valIsListOfDict } {
+            append result "\n$pad\"$key\": \["
+            for {set i 0} {$i < [llength $val]} {incr i} {
+                if { $i > 0 } { append result "," }
+                append result [config2json [lindex $val $i] [expr $level + 1]]
+            }
+            append result "\]"
+            continue
+        }
 
-	# Value is a dictionary
-	if { $valIsDict } {
-	    if { [dict size $val] > 0 } {
-		set val [config2json $val [expr $level + 1]]
-	    } else {
-		set val {{}}
-	    }
-	    append result "\n$pad\"$key\": $val"
-	    continue
-	}
+        # Value is a dictionary
+        if { $valIsDict } {
+            if { [dict size $val] > 0 } {
+                set val [config2json $val [expr $level + 1]]
+            } else {
+                set val {{}}
+            }
+            append result "\n$pad\"$key\": $val"
+            continue
+        }
 
-	# Normal key/value pair
-	append result "\n$pad\"$key\": \"$val\""
+        # Normal key/value pair
+        append result "\n$pad\"$key\": \"$val\""
     }
     append result "\n$pad\}"
     return $result
