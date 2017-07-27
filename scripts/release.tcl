@@ -67,7 +67,7 @@ proc prepare { config } {
                     set propName [lindex [dict get $conf "pomDeps" $depId] 0]
                     set propVersion [lindex [dict get $conf "pomDeps" $depId] 1]
                     if { $propVersion ne $pomVersion } {
-                        pomUpdate [list] $depId $propName $propVersion $pomVersion
+                        pomUpdate $depId $propName $propVersion $pomVersion
                         set updated true
                     }
                 }
@@ -91,189 +91,126 @@ proc release { config } {
 
     # Get a flat orderd list of configs
     set configs [flattenConfig $config ]
-    set recipe [list]
 
-    addCmd recipe "## Processing projects: [dict keys $configs]"
-    addCmd recipe "export CID_WORKDIR=`pwd`"
-    addCmd recipe "rm -rf target/checkout"
-    addCmd recipe "set -e"
-
-    addCmd recipe "## Release configuration"
-    foreach line [split [config2json $config] "\n"] {
-        addCmd recipe "# $line"
-    }
-
-    # Build the release recipe
-    foreach { projId } [dict keys $configs] {
-        set tagName [releaseProject recipe configs $projId]
-    }
-
-    # Add the release recipe to a branch
-    if { $tagName ne "" } {
-        set proj [dict get $configs $projId]
-        dict with proj {
-            set relBranch "release/$tagName"
-            addCmd recipe "## Delete temporary release branch"
-            addCmd recipe "git push origin --delete $relBranch"
-
-            gitCheckout $projId $vcsCommit
-            gitCreateBranch $relBranch
-
-            set fname "release-recipe.sh"
-            set fid [open $fname w]
-            puts $fid "#!/bin/bash"
-            puts $fid ""
-
-            logInfo "\nBEGIN Release Recipe =========================="
-
-            foreach line $recipe {
-                if { [string match "echo \"## *" $line] } {
-                    set line "echo \" Step [incr stepIndex] - [string range $line 9 end]"
-                }
-                puts $fid $line
-                puts $line
-            }
-            close $fid
-
-            logInfo "\nEND Release Recipe ============================\n"
-
-            # Push the recipe to the release branch
-            exec git add $fname
-            gitCommit "Add release recipe for $tagName"
-            gitPush $relBranch true
-        }
-    }
+    releaseProjects $configs
 
     logInfo "\nGood Bye!"
 }
 
 # Private ========================
 
-proc releaseProject { recipeRef configsRef projId } {
-    upvar $recipeRef recipe
-    upvar $configsRef configs
-    variable argv
+proc releaseProjects { configs } {
 
-    set proj [dict get $configs $projId]
-    dict with proj {
-        set projDir "target/checkout/$projId"
+    set projKeys [dict keys $configs]
+    logInfo "=================================================="
+    logInfo " Step [incr i] - Processing projects: $projKeys"
+    logInfo "=================================================="
 
-        addCmd recipe "## Processing project: $projId"
+    set projIndex [expr { [llength $projKeys] - 1 }]
+    set finalProjId [lindex $projKeys $projIndex]
 
-        if { $vcsTagName ne "" } {
-            addCmd recipe "## Use $projId ($vcsTagName)"
-            return ""
-        }
+    foreach { proj } [dict values $configs] {
+        dict with proj {
 
-        # Checkout the project
-        gitClone $projId $vcsUrl $vcsBranch
-        gitCheckout $projId $vcsCommit
+            logInfo "=================================================="
+            logInfo " Step [incr i] - Processing project: $projId"
+            logInfo "=================================================="
 
-        set tagName [gitNextAvailableTag $pomVersion]
-        set relBranch [gitCreateBranch "tmp-$tagName"]
-
-        addCmd recipe "cd \$CID_WORKDIR"
-
-        # Clone projects that is not the final target
-        set projIdx [lsearch [dict keys $configs] $projId]
-        if { $projIdx < [dict size $configs] - 1 } {
-            addCmd recipe "mkdir -p $projDir/.."
-            addCmd recipe "git clone $vcsUrl $projDir"
-            addCmd recipe "cd $projDir"
-            addCmd recipe "git checkout $vcsCommit"
-            addCmd recipe "git checkout -B $relBranch"
-        } else {
-            addCmd recipe "git fetch --force origin"
-            addCmd recipe "git reset --hard $vcsCommit"
-            addCmd recipe "git checkout -B $relBranch"
-        }
-
-        if { [llength $dependencies] > 0 } {
-            addCmd recipe "## Update the dependencies in POM with tagged versions"
-            foreach { depId } $dependencies {
-                set propName [lindex [dict get $pomDeps $depId] 0]
-                set propVersion [lindex [dict get $pomDeps $depId] 1]
-                set nextVersion [dict get $configs $depId "vcsTagName"]
-                pomUpdate recipe $depId $propName $propVersion $nextVersion
+            if { $vcsTagName ne "" } {
+                logInfo "Use existing tag $projId - $vcsTagName"
+                continue
             }
-        }
 
-        addCmd recipe "## Create tag $projId $tagName"
-
-        addCmd recipe "mvn versions:set -DnewVersion=$tagName $mvnExtraArgs"
-        addCmd recipe "mvn versions:commit $mvnExtraArgs"
-        addCmd recipe "mvn clean install -DskipTests $mvnExtraArgs"
-        addCmd recipe "git add --all"
-        addCmd recipe "git commit -m \"\[fuse-cid] prepare release $tagName\""
-        addCmd recipe "git tag -f -a $tagName -m \"\[fuse-cid] $tagName\""
-        addCmd recipe "git push origin $tagName"
-
-        addCmd recipe "## Prepare for next development iteration"
-
-        set nextVersion "[nextVersion $tagName]-SNAPSHOT"
-        addCmd recipe "mvn versions:set -DnewVersion=$nextVersion"
-        addCmd recipe "mvn versions:commit"
-        addCmd recipe "git add --all"
-        addCmd recipe "git commit -m \"\[fuse-cid] prepare for next development iteration\""
-
-        addCmd recipe "## Merge release branch into $vcsMasterBranch"
-
-        addCmd recipe "git fetch --force origin"
-        addCmd recipe "git checkout $vcsMasterBranch"
-        addCmd recipe "git reset --hard origin/$vcsMasterBranch"
-        addCmd recipe "git push --force origin $relBranch"
-        addCmd recipe "git merge --ff-only $relBranch"
-        addCmd recipe "git push origin $vcsMasterBranch"
-        addCmd recipe "git push origin --delete $relBranch"
-
-        if { [llength $dependencies] > 0 } {
-            addCmd recipe "## Prepare dev branch for next development iteration"
-            addCmd recipe "git checkout $vcsDevBranch"
-            addCmd recipe "git reset --hard $vcsMasterBranch"
-            foreach { depId } $dependencies {
-                set propName [lindex [dict get $pomDeps $depId] 0]
-                set propVersion [dict get $configs $depId "vcsTagName"]
-                set nextVersion "[nextVersion $propVersion]-SNAPSHOT"
-                pomUpdate recipe $depId $propName $propVersion $nextVersion
+            # Clone projects that is not the final target
+            if { $finalProjId ne $projId } {
+                gitClone $projId $vcsUrl $vcsBranch
             }
-            addCmd recipe "git push origin $vcsDevBranch"
+
+            gitCheckout $projId $vcsCommit
+
+            set tagName [gitNextAvailableTag $pomVersion]
+            set relBranch [gitCreateBranch "tmp-$tagName"]
+
+            if { [llength $dependencies] > 0 } {
+                logInfo "=================================================="
+                logInfo " Step [incr i] - Update the dependencies in POM with tagged versions"
+                logInfo "=================================================="
+                foreach { depId } $dependencies {
+                    set propName [lindex [dict get $pomDeps $depId] 0]
+                    set propVersion [lindex [dict get $pomDeps $depId] 1]
+                    set nextVersion [dict get $configs $depId "vcsTagName"]
+                    pomUpdate $depId $propName $propVersion $nextVersion
+                }
+            }
+
+            logInfo "=================================================="
+            logInfo " Step [incr i] - Create tag $projId $tagName"
+            logInfo "=================================================="
+
+            execMvn versions:set -DnewVersion=$tagName $mvnExtraArgs
+            execMvn versions:commit $mvnExtraArgs
+            execMvn clean install -DskipTests $mvnExtraArgs
+            exec git add --all
+
+            gitCommit "prepare release $tagName"
+            gitTag $tagName
+            gitPush $tagName
+
+            logInfo "=================================================="
+            logInfo " Step [incr i] - Prepare for next development iteration"
+            logInfo "=================================================="
+
+            set nextVersion "[nextVersion $tagName]-SNAPSHOT"
+            execMvn versions:set -DnewVersion=$nextVersion
+            execMvn versions:commit
+            exec git add --all
+
+            gitCommit "prepare for next development iteration"
+
+            logInfo "=================================================="
+            logInfo " Step [incr i] - Merge release branch into $vcsMasterBranch"
+            logInfo "=================================================="
+
+            gitPush $relBranch true
+            gitMerge $projId $vcsMasterBranch $relBranch
+            gitPush $vcsMasterBranch
+
+            if { [llength $dependencies] > 0 } {
+                logInfo "=================================================="
+                logInfo " Step [incr i] - Prepare dev branch for next development iteration"
+                logInfo "=================================================="
+                gitCheckout $projId $vcsDevBranch
+                exec git reset --hard $vcsMasterBranch
+                foreach { depId } $dependencies {
+                    set propName [lindex [dict get $pomDeps $depId] 0]
+                    set propVersion [dict get $configs $depId "vcsTagName"]
+                    set nextVersion "[nextVersion $propVersion]-SNAPSHOT"
+                    pomUpdate $depId $propName $propVersion $nextVersion
+                }
+                gitPush $vcsDevBranch
+            }
+
+            # Delete the release branch
+            gitDeleteBranch $relBranch
+
+            # Store the tagName in the config
+            dict set configs $projId "vcsTagName" $tagName
         }
-
-        # Push the release branch
-        gitDeleteBranch $vcsBranch $relBranch
-
-        # Store the tagName in the config
-        set proj [dict set proj "vcsTagName" $tagName]
-        dict set configs $projId $proj
-
-        return $tagName
     }
 }
 
-proc addCmd { recipeRef cmd } {
-    upvar $recipeRef recipe
-    if { [string match "## *" $cmd] } {
-        logInfo [string range $cmd 3 end]
-        lappend recipe ""
-        lappend recipe "echo \"==================================================\""
-        lappend recipe "echo \"$cmd\""
-        lappend recipe "echo \"==================================================\""
-        lappend recipe ""
-    } else {
-        lappend recipe $cmd
-    }
-}
-
-proc mvnPath { } {
-    variable argv
-    if { [dict exists $argv "-mvnHome"] } {
-        set res "[dict get $argv -mvnHome]/bin/mvn"
-    } else {
-        if { [catch { exec which mvn } res] } {
-            error "Cannot find 'mvn' executable"
+proc execMvn { args } {
+    logInfo "mvn $args"
+    set buildSuccess 0
+    set fid [open "|mvn $args"]
+    while { ![eof $fid] } {
+        set line [gets $fid]
+        if { [string match "*BUILD SUCCESS*" $line] } {
+            set buildSuccess true
         }
+        puts $line
     }
-    return $res
+    if { !$buildSuccess } { error "Maven build failed" }
 }
 
 proc nextVersion { version } {
@@ -305,8 +242,7 @@ proc nextVersion { version } {
     return "$major.$minor.$micro$patch"
 }
 
-proc pomUpdate { recipeRef projId pomKey pomVal nextVal } {
-    upvar $recipeRef recipe
+proc pomUpdate { projId pomKey pomVal nextVal } {
     variable tcl_platform
     if { ![file exists pom.xml] } { error "Cannot find [pwd]/pom.xml" }
     set message "Upgrade $projId to $nextVal"
@@ -318,11 +254,6 @@ proc pomUpdate { recipeRef projId pomKey pomVal nextVal } {
         exec git add pom.xml
         gitCommit $message
     }
-
-    addCmd recipe "$sedCmd"
-    addCmd recipe "rm -f pom.xml.bak"
-    addCmd recipe "git add pom.xml"
-    addCmd recipe "git commit -m \"\[fuse-cid] $message\""
 }
 
 # Main ========================

@@ -309,9 +309,8 @@ proc gitCreateBranch { newBranch } {
     return $newBranch
 }
 
-proc gitDeleteBranch { curBranch delBranch } {
+proc gitDeleteBranch { delBranch } {
     logInfo "Delete branch: $delBranch"
-    catch { exec git checkout --force $curBranch }
     catch { exec git push origin --delete $delBranch }
     catch { exec git branch -D $delBranch }
 }
@@ -352,7 +351,7 @@ proc gitNextAvailableTag { pomVersion } {
 
 proc gitMerge { projId target source } {
     gitCheckout $projId $target
-    exec git merge $source
+    exec git merge --ff-only $source
 }
 
 proc gitPush { rev { force false } } {
