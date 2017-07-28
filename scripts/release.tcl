@@ -130,6 +130,7 @@ proc releaseProjects { configs } {
 
             set tagName [gitNextAvailableTag $pomVersion]
             set relBranch [gitCreateBranch "tmp-$tagName"]
+            set nextVersion "[nextVersion $tagName]-SNAPSHOT"
 
             if { [llength $dependencies] > 0 } {
                 logInfo "=================================================="
@@ -147,9 +148,15 @@ proc releaseProjects { configs } {
             logInfo " Step [incr i] - Create tag $projId $tagName"
             logInfo "=================================================="
 
-            execMvn versions:set -DnewVersion=$tagName $mvnExtraArgs
-            execMvn versions:commit $mvnExtraArgs
-            execMvn clean install -DskipTests $mvnExtraArgs
+            if { $mvnExtraArgs ne "" } {
+                execMvn versions:set -DnewVersion=$tagName $mvnExtraArgs
+                execMvn versions:commit $mvnExtraArgs
+                execMvn clean install -DskipTests $mvnExtraArgs
+            } else {
+                execMvn versions:set -DnewVersion=$tagName
+                execMvn versions:commit
+                execMvn clean install -DskipTests
+            }
             exec git add --all
 
             gitCommit "prepare release $tagName"
@@ -160,9 +167,13 @@ proc releaseProjects { configs } {
             logInfo " Step [incr i] - Prepare for next development iteration"
             logInfo "=================================================="
 
-            set nextVersion "[nextVersion $tagName]-SNAPSHOT"
-            execMvn versions:set -DnewVersion=$nextVersion
-            execMvn versions:commit
+            if { $mvnExtraArgs ne "" } {
+                execMvn versions:set -DnewVersion=$nextVersion $mvnExtraArgs
+                execMvn versions:commit $mvnExtraArgs
+            } else {
+                execMvn versions:set -DnewVersion=$nextVersion
+                execMvn versions:commit
+            }
             exec git add --all
 
             gitCommit "prepare for next development iteration"
