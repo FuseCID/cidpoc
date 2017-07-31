@@ -139,8 +139,8 @@ proc releaseProjects { configs } {
                 foreach { depId } $dependencies {
                     set propName [lindex [dict get $pomDeps $depId] 0]
                     set propVersion [lindex [dict get $pomDeps $depId] 1]
-                    set nextVersion [dict get $configs $depId "vcsTagName"]
-                    pomUpdate $depId $propName $propVersion $nextVersion
+                    set nextPropVersion [dict get $configs $depId "vcsTagName"]
+                    pomUpdate $depId $propName $propVersion $nextPropVersion
                 }
             }
 
@@ -195,8 +195,8 @@ proc releaseProjects { configs } {
                 foreach { depId } $dependencies {
                     set propName [lindex [dict get $pomDeps $depId] 0]
                     set propVersion [dict get $configs $depId "vcsTagName"]
-                    set nextVersion "[nextVersion $propVersion]-SNAPSHOT"
-                    pomUpdate $depId $propName $propVersion $nextVersion
+                    set nextPropVersion "[nextVersion $propVersion]-SNAPSHOT"
+                    pomUpdate $depId $propName $propVersion $nextPropVersion
                 }
                 gitPush $vcsDevBranch
             }
