@@ -52,6 +52,17 @@ proc releaseMain { argv } {
 
 proc prepare { config } {
 
+    set updated false
+
+    ## Verify that master branch is reachable
+    dict with config {
+        if { ![gitIsReachable "origin/$vcsMasterBranch" $vcsBranch] } {
+            logInfo "\nMaster branch not reachable\n"
+            exec git reset --hard "origin/$vcsMasterBranch"
+            set updated true
+        }
+    }
+
     # Get a flat orderd list of configs
     set recipe [flattenConfig $config ]
 
@@ -60,7 +71,6 @@ proc prepare { config } {
         logInfo "\nFixing dependency versions\n"
         dict for { projId conf} $recipe {
             dict with conf {
-                set updated false
                 gitCheckout $projId $vcsBranch
                 foreach { depId } $dependencies {
                     set pomVersion [dict get $recipe $depId "pomVersion"]
@@ -71,11 +81,12 @@ proc prepare { config } {
                         set updated true
                     }
                 }
-                if { $updated } {
-                    gitPush $vcsBranch
-                }
             }
         }
+    }
+
+    if { $updated } {
+        gitPush $vcsBranch true
         exit 1
     }
 
@@ -90,30 +101,30 @@ proc release { config } {
     }
 
     # Get a flat orderd list of configs
-    set configs [flattenConfig $config ]
+    set recipe [flattenConfig $config ]
 
-    releaseProjects $configs
+    releaseProjects $recipe
 
     logInfo "\nGood Bye!"
 }
 
 # Private ========================
 
-proc releaseProjects { configs } {
+proc releaseProjects { recipe } {
 
-    set projKeys [dict keys $configs]
+    set projKeys [dict keys $recipe]
     logInfo "=================================================="
-    logInfo " Step [incr i] - Processing projects: $projKeys"
+    logInfo "Step [incr i] - Processing projects: $projKeys"
     logInfo "=================================================="
 
     set projIndex [expr { [llength $projKeys] - 1 }]
     set finalProjId [lindex $projKeys $projIndex]
 
-    foreach { proj } [dict values $configs] {
+    foreach { proj } [dict values $recipe] {
         dict with proj {
 
             logInfo "=================================================="
-            logInfo " Step [incr i] - Processing project: $projId"
+            logInfo "Step [incr i] - Processing project: $projId"
             logInfo "=================================================="
 
             if { $vcsTagName ne "" } {
@@ -133,19 +144,21 @@ proc releaseProjects { configs } {
             set nextVersion "[nextVersion $tagName]-SNAPSHOT"
 
             if { [llength $dependencies] > 0 } {
+
                 logInfo "=================================================="
-                logInfo " Step [incr i] - Update the dependencies in POM with tagged versions"
+                logInfo "Step [incr i] - Update the dependencies in POM with tagged versions"
                 logInfo "=================================================="
+
                 foreach { depId } $dependencies {
                     set propName [lindex [dict get $pomDeps $depId] 0]
                     set propVersion [lindex [dict get $pomDeps $depId] 1]
-                    set nextPropVersion [dict get $configs $depId "vcsTagName"]
+                    set nextPropVersion [dict get $recipe $depId "vcsTagName"]
                     pomUpdate $depId $propName $propVersion $nextPropVersion
                 }
             }
 
             logInfo "=================================================="
-            logInfo " Step [incr i] - Create tag $projId $tagName"
+            logInfo "Step [incr i] - Create tag $projId $tagName"
             logInfo "=================================================="
 
             if { $mvnExtraArgs ne "" } {
@@ -163,49 +176,11 @@ proc releaseProjects { configs } {
             gitTag $tagName
             gitPush $tagName
 
-            logInfo "=================================================="
-            logInfo " Step [incr i] - Prepare for next development iteration"
-            logInfo "=================================================="
-
-            if { $mvnExtraArgs ne "" } {
-                execMvn versions:set -DnewVersion=$nextVersion $mvnExtraArgs
-                execMvn versions:commit $mvnExtraArgs
-            } else {
-                execMvn versions:set -DnewVersion=$nextVersion
-                execMvn versions:commit
-            }
-            exec git add --all
-
-            gitCommit "prepare for next development iteration"
-
-            logInfo "=================================================="
-            logInfo " Step [incr i] - Merge release branch into $vcsMasterBranch"
-            logInfo "=================================================="
-
-            gitPush $relBranch true
-            gitMerge $projId $vcsMasterBranch $relBranch
-            gitPush $vcsMasterBranch
-
-            if { [llength $dependencies] > 0 } {
-                logInfo "=================================================="
-                logInfo " Step [incr i] - Prepare dev branch for next development iteration"
-                logInfo "=================================================="
-                gitCheckout $projId $vcsDevBranch
-                exec git reset --hard $vcsMasterBranch
-                foreach { depId } $dependencies {
-                    set propName [lindex [dict get $pomDeps $depId] 0]
-                    set propVersion [dict get $configs $depId "vcsTagName"]
-                    set nextPropVersion "[nextVersion $propVersion]-SNAPSHOT"
-                    pomUpdate $depId $propName $propVersion $nextPropVersion
-                }
-                gitPush $vcsDevBranch
-            }
-
             # Delete the release branch
             gitDeleteBranch $relBranch
 
             # Store the tagName in the config
-            dict set configs $projId "vcsTagName" $tagName
+            dict set recipe $projId "vcsTagName" $tagName
         }
     }
 }
@@ -225,6 +200,13 @@ proc execMvn { args } {
 }
 
 proc nextVersion { version } {
+    set parts [nextVersionParts $version]
+    dict with parts {
+        return "$major.$minor.$micro.$patch"
+    }
+}
+
+proc nextVersionParts { version } {
     # Strip a potential -SNAPSHOT suffix
     set snapshot [string match "*-SNAPSHOT" $version]
     if { $snapshot } {
@@ -235,22 +217,29 @@ proc nextVersion { version } {
     set major [lindex $tokens 0]
     set minor [lindex $tokens 1]
     if { [llength $tokens] < 4 } {
-        set patch ".fuse-700001"
+        set patch "fuse-700001"
         set micro [lindex $tokens 2]
     } else {
         set micro [lindex $tokens 2]
-        set idx [string length "$major.$minor.$micro"]
+        set idx [string length "$major.$minor.$micro."]
         set patch [string range $version $idx end]
-        if { [string match ".fuse-??????" $patch] }  {
-            set start [string range $patch 0 5]
-            set num [string range $patch 6 end]
+        if { [string match "fuse*" $patch] }  {
+            set start [string range $patch 0 3]
+            set num 700001
+            if { [string match "fuse-??????" $patch] } {
+                set num [string range $patch 5 end]
+            }
             if { !$snapshot } { incr num }
-            set patch "$start$num"
+            set patch "$start-$num"
         } else {
             error "Cannot parse version: $version"
         }
     }
-    return "$major.$minor.$micro$patch"
+    dict set result major $major
+    dict set result minor $minor
+    dict set result micro $micro
+    dict set result patch $patch
+    return $result
 }
 
 proc pomUpdate { projId pomKey pomVal nextVal } {

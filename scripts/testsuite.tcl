@@ -2,19 +2,19 @@
 #
 
 dict set config ProjA vcsUrl "git@github.com:FuseCID/cidpocA.git"
-dict set config ProjA vcsRef 1.1.0 1 master
+dict set config ProjA vcsRef 1.2.0 1 master
 
 dict set config ProjB vcsUrl "git@github.com:FuseCID/cidpocB.git"
-dict set config ProjB vcsRef 1.1.0 1 master
+dict set config ProjB vcsRef 1.2.0 1 master
 
 dict set config ProjC vcsUrl "git@github.com:FuseCID/cidpocC.git"
-dict set config ProjC vcsRef 1.1.0 1 master next
+dict set config ProjC vcsRef 1.2.0 1 master next
 
 dict set config ProjD vcsUrl "git@github.com:FuseCID/cidpocD.git"
-dict set config ProjD vcsRef 1.1.0 1 master next
+dict set config ProjD vcsRef 1.2.0 1 master next
 
 dict set config ProjE vcsUrl "git@github.com:FuseCID/cidpocE.git"
-dict set config ProjE vcsRef 1.1.0 1 master next
+dict set config ProjE vcsRef 1.2.0 1 master next
 
 proc mainMenu { argv } {
 
@@ -216,13 +216,6 @@ proc resetProject { projId vcsUrl vcsRef offset branches } {
             puts "Deleting tag $tag"
             catch { exec git push origin :refs/tags/$tag }
             catch { exec git tag -d $tag }
-        }
-    }
-
-    # Delete release branches
-    foreach branch [exec git branch -r] {
-        if { [string match "origin/release/*" $branch ] } {
-            gitDeleteBranch master [string range $branch 7 end]
         }
     }
 

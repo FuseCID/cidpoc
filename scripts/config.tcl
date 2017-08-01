@@ -171,9 +171,10 @@ proc getBuildParameter { rootNode name {required true}} {
 proc getApplicableTagName { config } {
 
     set projId [dict get $config "projId"]
+    set pomVersion [dict get $config "pomVersion"]
     set headRev [gitGetHash HEAD]
     set subject [gitGetSubject HEAD]
-    set lastAvailableTag [gitLastAvailableTag]
+    set lastAvailableTag [gitLastAvailableTag $pomVersion]
 
     # If HEAD points to a maven release, we use the associated tag
     if { $lastAvailableTag eq "" } {
@@ -324,6 +325,9 @@ proc gitGetSubject { rev } {
 }
 
 proc gitIsReachable { target from } {
+    if { [gitGetHash $target] eq [gitGetHash $from] } {
+        return 1
+    }
     set revs [split [exec git rev-list --reverse $target..$from]]
     if { [llength $revs] < 1 } {
         return 0
@@ -332,21 +336,26 @@ proc gitIsReachable { target from } {
     return [expr { [gitGetHash $target] eq [gitGetHash $rev^] }]
 }
 
-proc gitLastAvailableTag { } {
+proc gitLastAvailableTag { version } {
+    set parts [nextVersionParts $version]
+    dict with parts {
+        set prefix "$major.$minor.$micro"
+    }
     catch { exec git fetch origin --tags } res
-    set tagList [exec git tag]
+    set tagList [exec git tag -l "$prefix*"]
     if { [llength $tagList] < 1 } { return "" }
     set tagName [lindex $tagList [expr { [llength $tagList] - 1 }]]
     return $tagName
 }
 
-proc gitNextAvailableTag { pomVersion } {
-    set tagName [nextVersion $pomVersion]
-    set tagList [exec git tag]
-    while { [lsearch $tagList $tagName] >= 0 } {
-        set tagName [nextVersion $tagName]
+proc gitNextAvailableTag { version } {
+    set tagName [gitLastAvailableTag $version]
+    if { $tagName ne ""} {
+        set result [nextVersion $tagName]
+    } else {
+        set result [nextVersion $version]
     }
-    return $tagName
+    return $result
 }
 
 proc gitMerge { projId target source } {
