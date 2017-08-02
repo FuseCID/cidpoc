@@ -53,20 +53,30 @@ proc configTree { argv } {
 }
 
 proc verifyConfig { config } {
+
     puts "Verifying configuration\n"
     puts [config2json $config]
 
+    set workDir [pwd]
     set problems [list]
     set recipe [flattenConfig $config ]
+
     dict for { key conf} $recipe {
         dict with conf {
+
+            gitCheckout $projId $vcsBranch
+
+            logDebug "Check whether master branch of $projId is reachable from $vcsBranch"
+            if { ![gitIsReachable "origin/$vcsMasterBranch" $vcsBranch] } {
+                lappend problems "Master branch of $projId not reachable from $vcsBranch"
+            }
+
             # for each dependency get the pomVersion
             foreach { depName } $dependencies {
                 set pomVersion [dict get $recipe $depName "pomVersion"]
-                # get the corresponding version from pomDeps
                 set propName [lindex [dict get $conf "pomDeps" $depName] 0]
                 set propVersion [lindex [dict get $conf "pomDeps" $depName] 1]
-                # verify that the two versions are equal
+                logDebug "Verify values of $propName: $propVersion vs. $pomVersion"
                 if { $propVersion ne $pomVersion } {
                     lappend problems "Make $key dependent on $depName ($pomVersion)"
                 }
@@ -79,10 +89,11 @@ proc verifyConfig { config } {
         foreach { prob } $problems {
             logError $prob
         }
-        return 0
     }
 
-    return 1
+    cd $workDir
+
+    return [expr {[llength $problems] < 1}]
 }
 
 # Private ========================
@@ -205,7 +216,8 @@ proc getApplicableTagName { config } {
         # Walk back, processing our own upgrade commits
         while { $auxRev ne $tagRev } {
             logDebug "$subject ($auxRev)"
-            if { ![string match "?fuse-cid] Upgrade * to *" $subject] && ![string match "* prepare for next *" $subject] } {
+            set upgradeMatch [expr {[string match "?fuse-cid] Upgrade *" $subject] || [string match "?fuse-cid] Upgrading *" $subject]}]
+            if { !$upgradeMatch && ![string match "* prepare for next *" $subject] } {
                 logDebug "Found user commit: $subject ($auxRev)"
                 return ""
             }
@@ -340,6 +352,10 @@ proc gitLastAvailableTag { version } {
     set parts [nextVersionParts $version]
     dict with parts {
         set prefix "$major.$minor.$micro"
+    }
+    # Delete potentially stale tags
+    foreach { tagName} [exec git tag -l "$prefix*"] {
+        exec git tag -d $tagName
     }
     catch { exec git fetch origin --tags } res
     set tagList [exec git tag -l "$prefix*"]

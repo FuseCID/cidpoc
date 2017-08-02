@@ -52,41 +52,54 @@ proc releaseMain { argv } {
 
 proc prepare { config } {
 
-    set updated false
-
-    ## Verify that master branch is reachable
-    dict with config {
-        if { ![gitIsReachable "origin/$vcsMasterBranch" $vcsBranch] } {
-            logInfo "\nMaster branch not reachable\n"
-            exec git reset --hard "origin/$vcsMasterBranch"
-            set updated true
-        }
-    }
-
     # Get a flat orderd list of configs
     set recipe [flattenConfig $config ]
+    set verifyOk [verifyConfig $config]
 
     # Verify the given config
-    if { ![verifyConfig $config] } {
-        logInfo "\nFixing dependency versions\n"
-        dict for { projId conf} $recipe {
+    if { !$verifyOk } {
+        logInfo "\nFixing consistency issues\n"
+        dict for { key conf} $recipe {
             dict with conf {
+
+                set updated false
                 gitCheckout $projId $vcsBranch
+
+                if { ![gitIsReachable "origin/$vcsMasterBranch" $vcsBranch] } {
+                    logInfo "Reset $vcsBranch of $projId to origin/$vcsMasterBranch"
+                    exec git reset --hard "origin/$vcsMasterBranch"
+                    set updated true
+                }
+
+                set messages [list]
+                set projNames [list]
                 foreach { depId } $dependencies {
                     set pomVersion [dict get $recipe $depId "pomVersion"]
                     set propName [lindex [dict get $conf "pomDeps" $depId] 0]
                     set propVersion [lindex [dict get $conf "pomDeps" $depId] 1]
                     if { $propVersion ne $pomVersion } {
-                        pomUpdate $depId $propName $propVersion $pomVersion
+                        set msg [pomUpdate $depId $propName $propVersion $pomVersion]
+                        lappend projNames $depId
+                        lappend messages $msg
                         set updated true
                     }
                 }
+
+                if { [llength $messages] > 0 } {
+                    if { [llength $messages] > 1 } {
+                        set messages [linsert $messages 0 "Upgrading dependencies for [join $projNames ", "]\n"]
+                    }
+                    exec git add pom.xml
+                    gitCommit [join $messages "\n"]
+                }
+                
+                if { $updated } {
+                    gitPush $vcsBranch true
+                }
             }
         }
-    }
 
-    if { $updated } {
-        gitPush $vcsBranch true
+        # Exit if verify was not ok
         exit 1
     }
 
@@ -143,6 +156,7 @@ proc releaseProjects { recipe } {
             set relBranch [gitCreateBranch "tmp-$tagName"]
             set nextVersion "[nextVersion $tagName]-SNAPSHOT"
 
+            set messages [list]
             if { [llength $dependencies] > 0 } {
 
                 logInfo "=================================================="
@@ -153,7 +167,8 @@ proc releaseProjects { recipe } {
                     set propName [lindex [dict get $pomDeps $depId] 0]
                     set propVersion [lindex [dict get $pomDeps $depId] 1]
                     set nextPropVersion [dict get $recipe $depId "vcsTagName"]
-                    pomUpdate $depId $propName $propVersion $nextPropVersion
+                    set msg [pomUpdate $depId $propName $propVersion $nextPropVersion]
+                    lappend messages $msg
                 }
             }
 
@@ -170,9 +185,11 @@ proc releaseProjects { recipe } {
                 execMvn versions:commit
                 execMvn clean install -DskipTests
             }
-            exec git add --all
 
-            gitCommit "prepare release $tagName"
+            exec git add --all
+            set messages [linsert $messages 0 "prepare release $tagName\n"]
+            gitCommit [join $messages "\n"]
+
             gitTag $tagName
             gitPush $tagName
 
@@ -251,9 +268,8 @@ proc pomUpdate { projId pomKey pomVal nextVal } {
     eval exec $sedCmd
     if { [file exists pom.xml.bak] } {
         exec rm -f pom.xml.bak
-        exec git add pom.xml
-        gitCommit $message
     }
+    return $message
 }
 
 # Main ========================
