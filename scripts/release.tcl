@@ -92,7 +92,7 @@ proc prepare { config } {
                     exec git add pom.xml
                     gitCommit [join $messages "\n"]
                 }
-                
+
                 if { $updated } {
                     gitPush $vcsBranch true
                 }
@@ -204,15 +204,23 @@ proc releaseProjects { recipe } {
 
 proc execMvn { args } {
     logInfo "mvn $args"
-    set buildSuccess 0
+
+    set oldval [fconfigure stdout -buffering]
+    fconfigure stdout -buffering line
+
     set fid [open "|mvn $args"]
+    fconfigure $fid -buffering line
+
+    set buildSuccess 0
     while { ![eof $fid] } {
         set line [gets $fid]
         if { [string match "*BUILD SUCCESS*" $line] } {
             set buildSuccess true
         }
-        puts $line
+        puts stdout $line
     }
+
+    fconfigure stdout -buffering $oldval
     if { !$buildSuccess } { error "Maven build failed" }
 }
 
