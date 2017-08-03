@@ -6,10 +6,10 @@
 package require rest
 package require json
 
-set targetDir [file normalize [pwd]/target]
+set checkoutDir [file normalize [pwd]/.checkout]
 
 proc configMain { argv } {
-    variable targetDir
+    variable checkoutDir
 
     if { [llength $argv] < 2 } {
         puts "Usage:"
@@ -25,7 +25,7 @@ proc configMain { argv } {
     set json [config2json $config]
 
     # Write json to file
-    set fname $targetDir/config.json
+    set fname $checkoutDir/config.json
     set fid [open $fname w]
     puts $fid $json
     close $fid
@@ -285,16 +285,16 @@ proc flattenConfig { config { result ""} } {
 
 # Checkout the specified revision and change to the resulting workdir
 proc gitCheckout { projId rev } {
-    variable targetDir
-    cd [file normalize $targetDir/checkout/$projId]
+    variable checkoutDir
+    cd [file normalize $checkoutDir/$projId]
     catch { exec git checkout $rev }
     return [pwd]
 }
 
 # Clone or checkout the specified branch and change to the resulting workdir
 proc gitClone { projId vcsUrl { vcsBranch "master" } } {
-    variable targetDir
-    set workDir [file normalize $targetDir/checkout/$projId]
+    variable checkoutDir
+    set workDir [file normalize $checkoutDir/$projId]
     if { [file exists $workDir] } {
         cd $workDir
         catch { exec git clean --force } res
