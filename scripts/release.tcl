@@ -226,7 +226,7 @@ proc nextVersionParts { version } {
         if { [string match "fuse*" $patch] }  {
             set start [string range $patch 0 3]
             set num 700001
-            if { [string match "fuse-??????" $patch] } {
+            if { [string match "fuse-7?????" $patch] } {
                 set num [string range $patch 5 end]
             }
             if { !$snapshot } { incr num }
