@@ -78,14 +78,14 @@ proc verifyConfig { config } {
                 set propVersion [lindex [dict get $conf "pomDeps" $depName] 1]
                 logDebug "Verify values of $propName: $propVersion vs. $pomVersion"
                 if { $propVersion ne $pomVersion } {
-                    lappend problems "Make $key dependent on $depName ($pomVersion)"
+                    lappend problems "Make $key dependent on $depName $pomVersion"
                 }
             }
         }
     }
 
     if  { [llength $problems] > 0 } {
-        logError "\nThis configuration is not consistent\n"
+        logError "\nThis configuration is not consistent"
         foreach { prob } $problems {
             logError $prob
         }
@@ -117,6 +117,7 @@ proc configTreeByBuildId { buildId } {
     # Set project config values
     dict set config projId [[$rootNode selectNodes buildType] @projectId]
     dict set config buildNumber [$rootNode @number]
+    dict set config buildId [$rootNode @id]
     dict set config vcsUrl [selectRootUrl $vcsRootId]
     dict set config vcsMasterBranch [getBuildParameter $rootNode "cid.master.branch"]
     dict set config vcsDevBranch [getBuildParameter $rootNode "cid.dev.branch"]

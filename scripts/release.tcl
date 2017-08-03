@@ -5,24 +5,13 @@ proc prepareMain { argv } {
 
     if { [llength $argv] < 2 } {
         puts "Usage:"
-        puts "  tclsh release.tcl -cmd prepare \[-buildType buildType|-buildId buildId|-json path] \[-tcuser username] \[-tcpass password] \[-host host]"
+        puts "  tclsh release.tcl -cmd prepare \[-buildType buildType|-buildId buildId] \[-tcuser username] \[-tcpass password] \[-host host]"
         puts "  e.g. tclsh release.tcl -cmd prepare -buildType ProjCNext -tcuser restuser -tcpass somepass -host http://52.214.125.98:8111"
         puts "  e.g. tclsh release.tcl -cmd prepare -buildId %teamcity.build.id% -tcuser %system.teamcity.auth.userId% -tcpass %system.teamcity.auth.password% -host %teamcity.serverUrl%"
         return 1
     }
 
-    if { [dict exists $argv "-json"] } {
-        set fname [dict get $argv "-json"]
-        set fid [open $fname]
-        set json [read $fid]
-        set config [json::json2dict $json]
-        close $fid
-        if { ![verifyConfig $config] } {
-            exit 1
-        }
-    } else {
-        set config [configTree $argv]
-    }
+    set config [configTree $argv]
 
     prepare $config
 }
@@ -31,76 +20,63 @@ proc releaseMain { argv } {
 
     if { [llength $argv] < 2 } {
         puts "Usage:"
-        puts "  tclsh release.tcl -cmd release \[-buildType buildType|-buildId buildId|-json path] \[-tcuser username] \[-tcpass password] \[-host host]"
+        puts "  tclsh release.tcl -cmd release \[-buildType buildType|-buildId buildId] \[-tcuser username] \[-tcpass password] \[-host host]"
         puts "  e.g. tclsh release.tcl -buildType ProjCNext -host http://52.214.125.98:8111"
         puts "  e.g. tclsh release.tcl -buildId %teamcity.build.id% -tcuser %system.teamcity.auth.userId% -tcpass %system.teamcity.auth.password% -host %teamcity.serverUrl%"
         return 1
     }
 
-    if { [dict exists $argv "-json"] } {
-        set fname [dict get $argv "-json"]
-        set fid [open $fname]
-        set json [read $fid]
-        set config [json::json2dict $json]
-        close $fid
-    } else {
-        set config [configTree $argv]
-    }
+    set config [configTree $argv]
 
     release $config
 }
 
 proc prepare { config } {
 
-    # Get a flat orderd list of configs
     set recipe [flattenConfig $config ]
     set verifyOk [verifyConfig $config]
 
-    # Verify the given config
-    if { !$verifyOk } {
-        logInfo "\nFixing consistency issues\n"
-        dict for { key conf} $recipe {
-            dict with conf {
+    set projId [dict get $config "projId"]
+    set proj [dict get $recipe $projId]
+    dict with proj {
 
-                set updated false
-                gitCheckout $projId $vcsBranch
+        gitCheckout $projId $vcsBranch
 
-                if { ![gitIsReachable "origin/$vcsMasterBranch" $vcsBranch] } {
-                    logInfo "Reset $vcsBranch of $projId to origin/$vcsMasterBranch"
-                    exec git reset --hard "origin/$vcsMasterBranch"
-                    set updated true
-                }
-
-                set messages [list]
-                set projNames [list]
-                foreach { depId } $dependencies {
-                    set pomVersion [dict get $recipe $depId "pomVersion"]
-                    set propName [lindex [dict get $conf "pomDeps" $depId] 0]
-                    set propVersion [lindex [dict get $conf "pomDeps" $depId] 1]
-                    if { $propVersion ne $pomVersion } {
-                        set msg [pomUpdate $depId $propName $propVersion $pomVersion]
-                        lappend projNames $depId
-                        lappend messages $msg
-                        set updated true
-                    }
-                }
-
-                if { [llength $messages] > 0 } {
-                    if { [llength $messages] > 1 } {
-                        set messages [linsert $messages 0 "Upgrading dependencies for [join $projNames ", "]\n"]
-                    }
-                    exec git add pom.xml
-                    gitCommit [join $messages "\n"]
-                }
-
-                if { $updated } {
-                    gitPush $vcsBranch true
-                }
-            }
+        if { ![gitIsReachable "origin/$vcsMasterBranch" $vcsBranch] } {
+            logWarn "Master branch of $projId not reachable from $vcsBranch"
+            logWarn "Reset $vcsBranch of $projId to origin/$vcsMasterBranch"
+            exec git reset --hard "origin/$vcsMasterBranch"
+            exit 1
         }
 
-        # Exit if verify was not ok
-        exit 1
+        if { !$verifyOk } {
+            logInfo "\nFixing consistency issues"
+
+            set messages [list]
+            set projNames [list]
+            foreach { depId } $dependencies {
+                set pomVersion [dict get $recipe $depId "pomVersion"]
+                set propName [lindex [dict get $proj "pomDeps" $depId] 0]
+                set propVersion [lindex [dict get $proj "pomDeps" $depId] 1]
+                if { $propVersion ne $pomVersion } {
+                    set msg [pomUpdate $depId $propName $propVersion $pomVersion]
+                    lappend projNames $depId
+                    lappend messages $msg
+                }
+            }
+
+            if { [llength $messages] > 0 } {
+                if { [llength $messages] > 1 } {
+                    set messages [linsert $messages 0 "Upgrading dependencies for [join $projNames ", "]\n"]
+                }
+                exec git add pom.xml
+                gitCommit [join $messages "\n"]
+                gitPush $vcsBranch true
+            }
+
+            # Exit if verify was not ok
+            exit 1
+        }
     }
 
     logInfo "\nOk to proceed!"
@@ -113,9 +89,8 @@ proc release { config } {
         exit 1
     }
 
-    # Get a flat orderd list of configs
+    # Get a flat ordered list of configs
     set recipe [flattenConfig $config ]
-
     releaseProjects $recipe
 
     logInfo "\nGood Bye!"

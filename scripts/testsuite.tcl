@@ -8,13 +8,13 @@ dict set config ProjB vcsUrl "git@github.com:FuseCID/cidpocB.git"
 dict set config ProjB vcsRef 1.2.0 1 master
 
 dict set config ProjC vcsUrl "git@github.com:FuseCID/cidpocC.git"
-dict set config ProjC vcsRef 1.2.0 1 master
+dict set config ProjC vcsRef 1.2.0 1 master next
 
 dict set config ProjD vcsUrl "git@github.com:FuseCID/cidpocD.git"
-dict set config ProjD vcsRef 1.2.0 1 master
+dict set config ProjD vcsRef 1.2.0 1 master next
 
 dict set config ProjE vcsUrl "git@github.com:FuseCID/cidpocE.git"
-dict set config ProjE vcsRef 1.2.0 1 master
+dict set config ProjE vcsRef 1.2.0 1 master next
 
 proc mainMenu { argv } {
 
@@ -138,8 +138,8 @@ proc doReset { } {
         dict with proj {
             dict for { rev data } $vcsRef {
                 set offset [lindex $data 0]
-                set branch [lindex $data 1]
-                resetProject $projId $vcsUrl $rev $offset $branch
+                set branches [lindex $data 1]
+                resetProject $projId $vcsUrl $rev $offset $branches
             }
         }
     }
@@ -204,7 +204,7 @@ proc promptForString {prompt {default ""}} {
     }
 }
 
-proc resetProject { projId vcsUrl vcsRef offset branch } {
+proc resetProject { projId vcsUrl vcsRef offset branches } {
     puts "\nProcessing $projId"
 
     gitClone $projId $vcsUrl
@@ -222,12 +222,16 @@ proc resetProject { projId vcsUrl vcsRef offset branch } {
     set revs [exec git log --format="%h" --reverse --ancestry-path $vcsRef^..HEAD]
     set rev [lindex $revs $offset]
 
-    gitCheckout $projId $branch
-    
-    catch { exec git reset --hard $rev }
-    catch { exec git commit --amend --no-edit }
-    set rev [exec git rev-parse HEAD]
-    catch { exec git push origin -f $branch } res; puts $res
+    foreach { branch } $branches {
+        gitCheckout $projId $branch
+        catch { exec git reset --hard $rev }
+        if { $branch eq "master" } {
+            catch { exec git commit --amend --no-edit }
+        } else {
+            catch { exec git reset --hard "master" }
+        }
+        gitPush $branch true
+    }
 }
 
 # Main ========================
