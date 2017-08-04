@@ -45,11 +45,12 @@ proc configTree { argv } {
     if { [dict exists $argv "-buildId"] } {
         set buildId [dict get $argv "-buildId"]
         return [configTreeByBuildId $buildId]
-    } else {
+    } elseif { [dict exists $argv "-buildType"] } {
         set buildType [dict get $argv "-buildType"]
         return [configTreeByBuildType $buildType]
+    } else {
+        error "No -buildId nor -buildType parameter given"
     }
-
 }
 
 proc verifyConfig { config } {
@@ -198,18 +199,18 @@ proc getApplicableTagName { config } {
     set dependencies [dict get $config "dependencies"]
 
     logDebug "Last available tag in $projId: $lastAvailableTag ($tagRev)"
-    logDebug "HEAD is at: $subject ($headRev)"
+    logDebug "HEAD of $projId is at: $subject ($headRev)"
 
     # If HEAD points to a maven release, we use the associated tag
     if { [string match "* prepare for next *" $subject] } {
-        logDebug "HEAD points to maven release"
+        logDebug "HEAD of $projId points to maven release"
         return $lastAvailableTag
     }
 
     # If the tag is reachable from HEAD
     if { [gitIsReachable $tagRev $headRev] } {
 
-        logDebug "Walk back from HEAD"
+        logDebug "Walk back from HEAD of $projId"
 
         set auxRev [gitGetHash $headRev]
         set subject [gitGetSubject $auxRev]
@@ -226,7 +227,7 @@ proc getApplicableTagName { config } {
             set subject [gitGetSubject $auxRev]
         }
     } elseif { ![gitIsReachable $headRev $tagRev] } {
-        logWarn "HEAD not reachable from tag $lastAvailableTag"
+        logWarn "HEAD of $projId not reachable from tag $lastAvailableTag"
         return ""
     }
 

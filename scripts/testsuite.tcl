@@ -60,8 +60,14 @@ proc doCommand { cmd } {
 }
 
 proc doConfig { } {
-    set config [configTreeByBuildType [getBuildType]]
-    puts [config2json $config]
+    variable argv
+    if { [dict exists $argv "-buildId"] } {
+        set buildId [dict get $argv "-buildId"]
+        set config [configTreeByBuildId $buildId]
+    } else {
+        set config [configTreeByBuildType [getBuildType]]
+    }
+    verifyConfig $config
 }
 
 proc doModify { } {
@@ -153,6 +159,16 @@ proc getBuildType { } {
         set buildType [promptForString "\nBuildType: "]
     }
     return $buildType
+}
+
+proc getBuildId { } {
+    variable argv
+    if { [dict exists $argv "-buildId"] } {
+        set buildId [dict get $argv "-buildId"]
+    } else {
+        set buildId [promptForInteger "\buildId: "]
+    }
+    return $buildId
 }
 
 # Private ========================
