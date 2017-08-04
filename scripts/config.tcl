@@ -128,9 +128,19 @@ proc configTreeByBuildId { buildId } {
     # Checkout this project
     dict with config {
         set workDir [gitClone $projId $vcsUrl $vcsBranch]
+        catch { exec git checkout $vcsMasterBranch } res
+        catch { exec git reset --hard origin/$vcsMasterBranch } res
+        catch { exec git checkout $vcsDevBranch } res
+        catch { exec git reset --hard origin/$vcsDevBranch } res
+        logDebug "\nCloned $projId into $workDir"
+        logDebug "   $vcsMasterBranch ([gitGetHash $vcsMasterBranch]) [gitGetSubject $vcsMasterBranch]"
+        if { $vcsMasterBranch ne $vcsDevBranch } {
+            logDebug "   $vcsDevBranch ([gitGetHash $vcsDevBranch]) [gitGetSubject $vcsDevBranch]"
+        }
         gitCheckout $projId $vcsCommit
     }
 
+    dict set config vcsMergePolicy [getBuildParameter $rootNode "cid.merge.policy" false]
     dict set config vcsSubject [gitGetSubject [dict get $config "vcsCommit"]]
     dict set config vcsTagName ""
 
@@ -289,7 +299,8 @@ proc flattenConfig { config { result ""} } {
 proc gitCheckout { projId rev } {
     variable checkoutDir
     cd [file normalize $checkoutDir/$projId]
-    catch { exec git checkout $rev }
+    logDebug "Checkout $projId [gitGetHash $rev] [gitGetSubject $rev]"
+    catch { exec git checkout $rev } res; 
     return [pwd]
 }
 
@@ -376,9 +387,15 @@ proc gitNextAvailableTag { version } {
     return $result
 }
 
-proc gitMerge { projId target source } {
+proc gitMerge { projId target source { policy "none" }} {
     gitCheckout $projId $target
-    exec git merge --ff-only $source
+    if { $policy eq "none" } {
+        logInfo "Merge $projId $source into $target"
+        exec git merge $source
+    } else {
+        logInfo "Merge $projId $source into $target with --$policy"
+        exec git merge --$policy $source
+    }
 }
 
 proc gitPush { rev { force false } } {

@@ -89,7 +89,7 @@ proc doModify { } {
     }
 
     set vcsUrl [dict get $config $projId "vcsUrl"]
-    set workDir [gitClone $projId $vcsUrl]
+    set workDir [gitClone $projId $vcsUrl "master"]
 
     set lines [list]
 
@@ -119,7 +119,7 @@ proc doModify { } {
 
     exec git add $resFile
     exec git commit -m $msg
-    catch { exec git push origin } res; puts $res
+    catch { exec git push origin master } res; puts $res
 }
 
 proc doPrepare { } {

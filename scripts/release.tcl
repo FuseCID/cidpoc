@@ -36,47 +36,42 @@ proc prepare { config } {
     set recipe [flattenConfig $config ]
     set verifyOk [verifyConfig $config]
 
-    set projId [dict get $config "projId"]
-    set proj [dict get $recipe $projId]
-    dict with proj {
+    if { !$verifyOk } {
 
-        gitCheckout $projId $vcsBranch
+        logInfo "\nFixing consistency issues"
+        foreach { proj } [dict values $recipe] {
+            dict with proj {
 
-        if { ![gitIsReachable "origin/$vcsMasterBranch" $vcsBranch] } {
-            logWarn "Master branch of $projId not reachable from $vcsBranch"
-            logWarn "Reset $vcsBranch of $projId to origin/$vcsMasterBranch"
-            exec git reset --hard "origin/$vcsMasterBranch"
-            exit 1
-        }
+                gitCheckout $projId $vcsBranch
 
-        if { !$verifyOk } {
-            logInfo "\nFixing consistency issues"
-
-            set messages [list]
-            set projNames [list]
-            foreach { depId } $dependencies {
-                set pomVersion [dict get $recipe $depId "pomVersion"]
-                set propName [lindex [dict get $proj "pomDeps" $depId] 0]
-                set propVersion [lindex [dict get $proj "pomDeps" $depId] 1]
-                if { $propVersion ne $pomVersion } {
-                    set msg [pomUpdate $depId $propName $propVersion $pomVersion]
-                    lappend projNames $depId
-                    lappend messages $msg
+                if { ![gitIsReachable "origin/$vcsMasterBranch" $vcsBranch] } {
+                    logWarn "Master branch of $projId not reachable from $vcsBranch"
+                    logWarn "Reset $vcsBranch of $projId to origin/$vcsMasterBranch"
+                    exec git reset --hard "origin/$vcsMasterBranch"
+                    gitPush $vcsBranch true
+                } else {
+                    set messages [list]
+                    set projNames [list]
+                    foreach { depId } $dependencies {
+                        set pomVersion [dict get $recipe $depId "pomVersion"]
+                        set propName [lindex [dict get $proj "pomDeps" $depId] 0]
+                        set propVersion [lindex [dict get $proj "pomDeps" $depId] 1]
+                        if { $propVersion ne $pomVersion } {
+                            set msg [pomUpdate $depId $propName $propVersion $pomVersion]
+                            lappend projNames $depId
+                            lappend messages $msg
+                        }
+                    }
+                    if { [llength $messages] > 0 } {
+                        commitDependencyUpgrades $projNames $messages
+                        gitPush $vcsBranch true
+                    }
                 }
             }
-
-            if { [llength $messages] > 0 } {
-                if { [llength $messages] > 1 } {
-                    set messages [linsert $messages 0 "Upgrading dependencies for [join $projNames ", "]\n"]
-                }
-                exec git add pom.xml
-                gitCommit [join $messages "\n"]
-                gitPush $vcsBranch true
-            }
-
-            # Exit if verify was not ok
-            exit 1
         }
+
+        # Exit if verify was not ok
+        exit 1
     }
 
     logInfo "\nOk to proceed!"
@@ -118,11 +113,6 @@ proc releaseProjects { recipe } {
             if { $vcsTagName ne "" } {
                 logInfo "Use existing tag $projId - $vcsTagName"
                 continue
-            }
-
-            # Clone projects that is not the final target
-            if { $finalProjId ne $projId } {
-                gitClone $projId $vcsUrl $vcsBranch
             }
 
             gitCheckout $projId $vcsCommit
@@ -168,6 +158,56 @@ proc releaseProjects { recipe } {
             gitTag $tagName
             gitPush $tagName
 
+            if { $vcsMergePolicy ne "" && $vcsMergePolicy ne "none" } {
+                logInfo "=================================================="
+                logInfo "Step [incr i] - Prepare for next development iteration"
+                logInfo "=================================================="
+
+                if { $mvnExtraArgs ne "" } {
+                    execMvn versions:set -DnewVersion=$nextVersion $mvnExtraArgs
+                    execMvn versions:commit $mvnExtraArgs
+                } else {
+                    execMvn versions:set -DnewVersion=$nextVersion
+                    execMvn versions:commit
+                }
+
+                exec git add --all
+                gitCommit "prepare for next development iteration"
+
+                logInfo "=================================================="
+                logInfo "Step [incr i] - Merge release branch into $vcsMasterBranch"
+                logInfo "=================================================="
+
+                gitPush $relBranch true
+                gitMerge $projId $vcsMasterBranch $relBranch $vcsMergePolicy
+                gitPush $vcsMasterBranch
+
+                if { [llength $dependencies] > 0 } {
+                    logInfo "=================================================="
+                    logInfo "Step [incr i] - Prepare dev branch for next development iteration"
+                    logInfo "=================================================="
+                    gitCheckout $projId $vcsDevBranch
+                    exec git reset --hard $vcsMasterBranch
+
+                    set messages [list]
+                    set projNames [list]
+                    foreach { depId } $dependencies {
+                        set propName [lindex [dict get $pomDeps $depId] 0]
+                        set propVersion [dict get $recipe $depId "vcsTagName"]
+                        set nextPropVersion "[nextVersion $propVersion]-SNAPSHOT"
+                        set msg [pomUpdate $depId $propName $propVersion $nextPropVersion]
+                        lappend projNames $depId
+                        lappend messages $msg
+                    }
+
+                    if { [llength $messages] > 0 } {
+                        commitDependencyUpgrades $projNames $messages
+                    }
+
+                    gitPush $vcsDevBranch
+                }
+            }
+
             # Delete the release branch
             gitDeleteBranch $relBranch
 
@@ -175,6 +215,14 @@ proc releaseProjects { recipe } {
             dict set recipe $projId "vcsTagName" $tagName
         }
     }
+}
+
+proc commitDependencyUpgrades { projNames messages } {
+    if { [llength $messages] > 1 } {
+        set messages [linsert $messages 0 "Upgrading dependencies for [join $projNames ", "]\n"]
+    }
+    exec git add pom.xml
+    gitCommit [join $messages "\n"]
 }
 
 proc execMvn { args } {
