@@ -100,9 +100,6 @@ proc releaseProjects { recipe } {
     logInfo "Step [incr i] - Processing projects: $projKeys"
     logInfo "=================================================="
 
-    set projIndex [expr { [llength $projKeys] - 1 }]
-    set finalProjId [lindex $projKeys $projIndex]
-
     foreach { proj } [dict values $recipe] {
         dict with proj {
 
@@ -182,6 +179,9 @@ proc releaseProjects { recipe } {
                 gitMerge $projId $vcsMasterBranch $relBranch $vcsMergePolicy
                 gitPush $vcsMasterBranch
 
+                # Update pomVersion in the recipe
+                dict set recipe $projId pomVersion [pomValue [pwd]/pom.xml {mvn:version}]
+                
                 if { [llength $dependencies] > 0 } {
                     logInfo "=================================================="
                     logInfo "Step [incr i] - Prepare dev branch for next development iteration"
@@ -194,7 +194,7 @@ proc releaseProjects { recipe } {
                     foreach { depId } $dependencies {
                         set propName [lindex [dict get $pomDeps $depId] 0]
                         set propVersion [dict get $recipe $depId "vcsTagName"]
-                        set nextPropVersion "[nextVersion $propVersion]-SNAPSHOT"
+                        set nextPropVersion [dict get $recipe $depId "pomVersion"]
                         set msg [pomUpdate $depId $propName $propVersion $nextPropVersion]
                         lappend projNames $depId
                         lappend messages $msg
@@ -211,7 +211,7 @@ proc releaseProjects { recipe } {
             # Delete the release branch
             gitDeleteBranch $relBranch
 
-            # Store the tagName in the config
+            # Update the vcsTagName in the recipe
             dict set recipe $projId "vcsTagName" $tagName
         }
     }
