@@ -86,14 +86,16 @@ proc release { config } {
 
     # Get a flat ordered list of configs
     set recipe [flattenConfig $config ]
-    releaseProjects $recipe
+    releaseProjects recipe
+    deployProjects recipe
 
     logInfo "\nGood Bye!"
 }
 
 # Private ========================
 
-proc releaseProjects { recipe } {
+proc releaseProjects { recipeRef } {
+    upvar $recipeRef recipe
 
     set projKeys [dict keys $recipe]
     logInfo "=================================================="
@@ -181,7 +183,7 @@ proc releaseProjects { recipe } {
 
                 # Update pomVersion in the recipe
                 dict set recipe $projId pomVersion [pomValue [pwd]/pom.xml {mvn:version}]
-                
+
                 if { [llength $dependencies] > 0 } {
                     logInfo "=================================================="
                     logInfo "Step [incr i] - Prepare dev branch for next development iteration"
@@ -213,8 +215,53 @@ proc releaseProjects { recipe } {
 
             # Update the vcsTagName in the recipe
             dict set recipe $projId "vcsTagName" $tagName
+            dict set recipe $projId "vcsDeployTag" $tagName
         }
     }
+}
+
+proc deployProjects { recipeRef } {
+    upvar $recipeRef recipe
+
+    set projList [list]
+    foreach { proj } [dict values $recipe] {
+        if { [dict exists $proj "vcsDeployTag"] } {
+            lappend projList [dict get $proj "projId"]-[dict get $proj "vcsDeployTag"]
+        }
+    }
+
+    if { [llength $projList] > 0 } {
+        logInfo "=================================================="
+        logInfo "Deploying projects: [join $projList ", "]"
+        logInfo "=================================================="
+        
+        foreach { proj } [dict values $recipe] {
+
+            if { ![dict exists $proj "vcsDeployTag"] } {
+                continue
+            }
+
+            dict with proj {
+
+                gitCheckout $projId $vcsDeployTag
+
+                if { $mvnExtraArgs ne "" } {
+                    execMvn clean deploy -DskipTests [altReleaseDeploymentRepository] $mvnExtraArgs
+                } else {
+                    execMvn clean deploy -DskipTests [altReleaseDeploymentRepository]
+                }
+            }
+        }
+    }
+}
+
+proc altReleaseDeploymentRepository {} {
+    variable argv
+    set repoSpec "jboss-staging-repository::default::https://repository.jboss.org/nexus/service/local/staging/deploy/maven2"
+    if { [dict exists $argv "mvn.staging.repository"] } {
+        set repoSpec [dict get $argv "mvn.staging.repository"]
+    }
+    return "-DaltReleaseDeploymentRepository=$repoSpec"
 }
 
 proc commitDependencyUpgrades { projNames messages } {
