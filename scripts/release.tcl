@@ -143,11 +143,11 @@ proc releaseProjects { recipeRef } {
             if { $mvnExtraArgs ne "" } {
                 execMvn versions:set -DnewVersion=$tagName $mvnExtraArgs
                 execMvn versions:commit $mvnExtraArgs
-                execMvn clean install -DskipTests $mvnExtraArgs
+                execMvn clean install -DperformRelease -Dmaven.javadoc.failOnError=false -DskipTests $mvnExtraArgs
             } else {
                 execMvn versions:set -DnewVersion=$tagName
                 execMvn versions:commit
-                execMvn clean install -DskipTests
+                execMvn clean install -DperformRelease -Dmaven.javadoc.failOnError=false -DskipTests
             }
 
             exec git add --all
@@ -246,9 +246,9 @@ proc deployProjects { recipeRef } {
                 gitCheckout $projId $vcsDeployTag
 
                 if { $mvnExtraArgs ne "" } {
-                    execMvn clean deploy -DskipTests [altReleaseDeploymentRepository] $mvnExtraArgs
+                    execMvn clean deploy -DperformRelease -Dmaven.javadoc.failOnError=false -DskipTests [altReleaseDeploymentRepository] $mvnExtraArgs
                 } else {
-                    execMvn clean deploy -DskipTests [altReleaseDeploymentRepository]
+                    execMvn clean deploy -DperformRelease -Dmaven.javadoc.failOnError=false -DskipTests [altReleaseDeploymentRepository]
                 }
             }
         }
