@@ -87,7 +87,6 @@ proc release { config } {
     # Get a flat ordered list of configs
     set recipe [flattenConfig $config ]
     releaseProjects recipe
-    deployProjects recipe
 
     logInfo "\nGood Bye!"
 }
@@ -143,11 +142,11 @@ proc releaseProjects { recipeRef } {
             if { $mvnExtraArgs ne "" } {
                 execMvn versions:set -DnewVersion=$tagName $mvnExtraArgs
                 execMvn versions:commit $mvnExtraArgs
-                execMvn clean install -DperformRelease -Dmaven.javadoc.failOnError=false -DskipTests $mvnExtraArgs
+                execMvn clean deploy -DperformRelease -Dmaven.javadoc.failOnError=false -DskipTests [altReleaseDeploymentRepository] $mvnExtraArgs
             } else {
                 execMvn versions:set -DnewVersion=$tagName
                 execMvn versions:commit
-                execMvn clean install -DperformRelease -Dmaven.javadoc.failOnError=false -DskipTests
+                execMvn clean deploy -DperformRelease -Dmaven.javadoc.failOnError=false -DskipTests [altReleaseDeploymentRepository] 
             }
 
             exec git add --all
@@ -215,42 +214,6 @@ proc releaseProjects { recipeRef } {
 
             # Update the vcsTagName in the recipe
             dict set recipe $projId "vcsTagName" $tagName
-            dict set recipe $projId "vcsDeployTag" $tagName
-        }
-    }
-}
-
-proc deployProjects { recipeRef } {
-    upvar $recipeRef recipe
-
-    set projList [list]
-    foreach { proj } [dict values $recipe] {
-        if { [dict exists $proj "vcsDeployTag"] } {
-            lappend projList [dict get $proj "projId"]-[dict get $proj "vcsDeployTag"]
-        }
-    }
-
-    if { [llength $projList] > 0 } {
-        logInfo "=================================================="
-        logInfo "Deploying projects: [join $projList ", "]"
-        logInfo "=================================================="
-        
-        foreach { proj } [dict values $recipe] {
-
-            if { ![dict exists $proj "vcsDeployTag"] } {
-                continue
-            }
-
-            dict with proj {
-
-                gitCheckout $projId $vcsDeployTag
-
-                if { $mvnExtraArgs ne "" } {
-                    execMvn clean deploy -DperformRelease -Dmaven.javadoc.failOnError=false -DskipTests [altReleaseDeploymentRepository] $mvnExtraArgs
-                } else {
-                    execMvn clean deploy -DperformRelease -Dmaven.javadoc.failOnError=false -DskipTests [altReleaseDeploymentRepository]
-                }
-            }
         }
     }
 }
