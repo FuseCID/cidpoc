@@ -97,6 +97,7 @@ proc gitNextAvailableTag { version } {
 
 proc gitMerge { projId sourceBranch targetBranch { policy "none" }} {
     gitCheckout $projId $targetBranch
+    catch { exec git gc }
     if { $policy eq "none" } {
         logInfo "Merge $projId $sourceBranch ([gitHash $sourceBranch]) into $targetBranch ([gitHash $targetBranch])"
         logInfo [exec git merge $sourceBranch]
