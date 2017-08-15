@@ -33,48 +33,47 @@ proc releaseMain { argv } {
 
 proc prepare { config } {
 
+    if { [verifyConfig $config] } {
+        logInfo "\nOk to proceed!"
+        return
+    }
+
+    logInfo "\nFixing consistency issues"
+
     set recipe [flattenConfig $config ]
-    set verifyOk [verifyConfig $config]
+    foreach { proj } [dict values $recipe] {
+        dict with proj {
 
-    if { !$verifyOk } {
+            gitCheckout $projId $vcsBranch
 
-        logInfo "\nFixing consistency issues"
-        foreach { proj } [dict values $recipe] {
-            dict with proj {
-
-                gitCheckout $projId $vcsBranch
-
-                if { ![gitIsReachable "origin/$vcsMasterBranch" $vcsBranch] } {
-                    logWarn "Master branch of $projId not reachable from $vcsBranch"
-                    logWarn "Reset $vcsBranch of $projId to origin/$vcsMasterBranch"
-                    exec git reset --hard "origin/$vcsMasterBranch"
-                    gitPush $vcsBranch true
-                } else {
-                    set messages [list]
-                    set projNames [list]
-                    foreach { depId } $dependencies {
-                        set pomVersion [dict get $recipe $depId "pomVersion"]
-                        set propName [lindex [dict get $proj "pomDeps" $depId] 0]
-                        set propVersion [lindex [dict get $proj "pomDeps" $depId] 1]
-                        if { $propVersion ne $pomVersion } {
-                            set msg [pomUpdate $depId $propName $propVersion $pomVersion]
-                            lappend projNames $depId
-                            lappend messages $msg
-                        }
+            if { ![gitIsReachable "origin/$vcsMasterBranch" $vcsBranch] } {
+                logWarn "Master branch of $projId not reachable from $vcsBranch"
+                logWarn "Reset $vcsBranch of $projId to origin/$vcsMasterBranch"
+                exec git reset --hard "origin/$vcsMasterBranch"
+                gitPush origin $vcsBranch true
+            } else {
+                set messages [list]
+                set projNames [list]
+                foreach { depId } $dependencies {
+                    set pomVersion [dict get $recipe $depId "pomVersion"]
+                    set propName [lindex [dict get $proj "pomDeps" $depId] 0]
+                    set propVersion [lindex [dict get $proj "pomDeps" $depId] 1]
+                    if { $propVersion ne $pomVersion } {
+                        set msg [pomUpdate $depId $propName $propVersion $pomVersion]
+                        lappend projNames $depId
+                        lappend messages $msg
                     }
-                    if { [llength $messages] > 0 } {
-                        commitDependencyUpgrades $projNames $messages
-                        gitPush $vcsBranch true
-                    }
+                }
+                if { [llength $messages] > 0 } {
+                    commitDependencyUpgrades $projNames $messages
+                    gitPush origin $vcsBranch true
                 }
             }
         }
-
-        # Exit if verify was not ok
-        exit 1
     }
 
-    logInfo "\nOk to proceed!"
+    # Exit if verify was not ok
+    exit 1
 }
 
 proc release { config } {
@@ -154,7 +153,7 @@ proc releaseProjects { recipeRef } {
             gitCommit [join $messages "\n"]
 
             gitTag $tagName
-            gitPush $tagName
+            gitPush origin $tagName
 
             if { $vcsMergePolicy ne "" && $vcsMergePolicy ne "none" } {
                 logInfo "=================================================="
@@ -176,9 +175,9 @@ proc releaseProjects { recipeRef } {
                 logInfo "Step [incr i] - Merge release branch into $vcsMasterBranch"
                 logInfo "=================================================="
 
-                gitPush $relBranch true
-                gitMerge $projId $vcsMasterBranch $relBranch $vcsMergePolicy
-                gitPush $vcsMasterBranch
+                gitPush origin $relBranch true
+                gitMerge $projId $relBranch $vcsMasterBranch $vcsMergePolicy
+                gitPush origin $vcsMasterBranch
 
                 # Update pomVersion in the recipe
                 dict set recipe $projId pomVersion [pomValue [pwd]/pom.xml {mvn:version}]
@@ -205,7 +204,7 @@ proc releaseProjects { recipeRef } {
                         commitDependencyUpgrades $projNames $messages
                     }
 
-                    gitPush $vcsDevBranch
+                    gitPush origin $vcsDevBranch
                 }
             }
 
@@ -318,6 +317,7 @@ proc pomUpdate { projId pomKey pomVal nextVal } {
 if { [string match "*/release.tcl" $argv0] } {
 
     set scriptDir [file dirname [info script]]
+    source $scriptDir/common.tcl
     source $scriptDir/config.tcl
 
     set cmd [dict get $argv "-cmd"]

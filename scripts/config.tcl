@@ -133,15 +133,15 @@ proc configTreeByBuildId { buildId } {
         catch { exec git checkout $vcsDevBranch } res
         catch { exec git reset --hard origin/$vcsDevBranch } res
         logDebug "\nCloned $projId into $workDir"
-        logDebug "   $vcsMasterBranch ([gitGetHash $vcsMasterBranch]) [gitGetSubject $vcsMasterBranch]"
+        logDebug "   $vcsMasterBranch ([gitHash $vcsMasterBranch]) [gitSubject $vcsMasterBranch]"
         if { $vcsMasterBranch ne $vcsDevBranch } {
-            logDebug "   $vcsDevBranch ([gitGetHash $vcsDevBranch]) [gitGetSubject $vcsDevBranch]"
+            logDebug "   $vcsDevBranch ([gitHash $vcsDevBranch]) [gitSubject $vcsDevBranch]"
         }
         gitCheckout $projId $vcsCommit
     }
 
     dict set config vcsMergePolicy [getBuildParameter $rootNode "cid.merge.policy" false]
-    dict set config vcsSubject [gitGetSubject [dict get $config "vcsCommit"]]
+    dict set config vcsSubject [gitSubject [dict get $config "vcsCommit"]]
     dict set config vcsTagName ""
 
     # Get the release command
@@ -195,8 +195,8 @@ proc getApplicableTagName { config } {
 
     set projId [dict get $config "projId"]
     set pomVersion [dict get $config "pomVersion"]
-    set headRev [gitGetHash HEAD]
-    set subject [gitGetSubject HEAD]
+    set headRev [gitHash HEAD]
+    set subject [gitSubject HEAD]
     set lastAvailableTag [gitLastAvailableTag $pomVersion]
 
     # If HEAD points to a maven release, we use the associated tag
@@ -205,7 +205,7 @@ proc getApplicableTagName { config } {
         return ""
     }
 
-    set tagRev [gitGetHash $lastAvailableTag]
+    set tagRev [gitHash $lastAvailableTag]
     set dependencies [dict get $config "dependencies"]
 
     logDebug "Last available tag in $projId: $lastAvailableTag ($tagRev)"
@@ -222,8 +222,8 @@ proc getApplicableTagName { config } {
 
         logDebug "Walk back from HEAD of $projId"
 
-        set auxRev [gitGetHash $headRev]
-        set subject [gitGetSubject $auxRev]
+        set auxRev [gitHash $headRev]
+        set subject [gitSubject $auxRev]
 
         # Walk back, processing our own upgrade commits
         while { $auxRev ne $tagRev } {
@@ -233,8 +233,8 @@ proc getApplicableTagName { config } {
                 logDebug "Found user commit: $subject ($auxRev)"
                 return ""
             }
-            set auxRev [gitGetHash $auxRev^]
-            set subject [gitGetSubject $auxRev]
+            set auxRev [gitHash $auxRev^]
+            set subject [gitSubject $auxRev]
         }
     } elseif { ![gitIsReachable $headRev $tagRev] } {
         logWarn "HEAD of $projId not reachable from tag $lastAvailableTag"
@@ -293,166 +293,6 @@ proc flattenConfig { config { result ""} } {
         dict append result $projId [dict replace $config "dependencies" $depids]
     }
     return $result
-}
-
-# Checkout the specified revision and change to the resulting workdir
-proc gitCheckout { projId rev } {
-    variable checkoutDir
-    cd [file normalize $checkoutDir/$projId]
-    logDebug "Checkout $projId [gitGetHash $rev] [gitGetSubject $rev]"
-    catch { exec git checkout $rev } res; 
-    return [pwd]
-}
-
-# Clone or checkout the specified branch and change to the resulting workdir
-proc gitClone { projId vcsUrl { vcsBranch "master" } } {
-    variable checkoutDir
-    set workDir [file normalize $checkoutDir/$projId]
-    if { [file exists $workDir] } {
-        cd $workDir
-        catch { exec git clean --force } res
-        catch { exec git fetch --force origin } res
-        catch { exec git checkout $vcsBranch } res
-        catch { exec git reset --hard origin/$vcsBranch } res
-    } else {
-        file mkdir $workDir/..
-        if { [catch { exec git clone -b $vcsBranch $vcsUrl $workDir } res] } {
-            logInfo $res
-        }
-        cd $workDir
-    }
-    return $workDir
-}
-
-proc gitCommit { msg } {
-    logInfo "Commit: \[fuse-cid] $msg"
-    exec git commit -m "\[fuse-cid] $msg"
-}
-
-proc gitCreateBranch { newBranch } {
-    catch { exec git checkout -B $newBranch } res;
-    logInfo $res
-    return $newBranch
-}
-
-proc gitDeleteBranch { delBranch } {
-    logInfo "Delete branch: $delBranch"
-    catch { exec git push origin --delete $delBranch }
-    catch { exec git branch -D $delBranch }
-}
-
-proc gitGetHash { rev } {
-    return [exec git log -n 1 --pretty=%h $rev]
-}
-
-proc gitGetSubject { rev } {
-    return [exec git log -n 1 --pretty=%s $rev]
-}
-
-proc gitIsReachable { target from } {
-    if { [gitGetHash $target] eq [gitGetHash $from] } {
-        return 1
-    }
-    set revs [split [exec git rev-list --reverse $target..$from]]
-    if { [llength $revs] < 1 } {
-        return 0
-    }
-    set rev [lindex $revs 0]
-    return [expr { [gitGetHash $target] eq [gitGetHash $rev^] }]
-}
-
-proc gitLastAvailableTag { version } {
-    set parts [nextVersionParts $version]
-    dict with parts {
-        set prefix "$major.$minor.$micro"
-    }
-    # Delete potentially stale tags
-    foreach { tagName} [exec git tag -l "$prefix*"] {
-        exec git tag -d $tagName
-    }
-    catch { exec git fetch origin --tags } res
-    set tagList [exec git tag -l "$prefix*"]
-    if { [llength $tagList] < 1 } { return "" }
-    set tagName [lindex $tagList [expr { [llength $tagList] - 1 }]]
-    return $tagName
-}
-
-proc gitNextAvailableTag { version } {
-    set tagName [gitLastAvailableTag $version]
-    if { $tagName ne ""} {
-        set result [nextVersion $tagName]
-    } else {
-        set result [nextVersion $version]
-    }
-    return $result
-}
-
-proc gitMerge { projId target source { policy "none" }} {
-    gitCheckout $projId $target
-    if { $policy eq "none" } {
-        logInfo "Merge $projId $source into $target"
-        exec git merge $source
-    } else {
-        logInfo "Merge $projId $source into $target with --$policy"
-        exec git merge --$policy $source
-    }
-}
-
-proc gitPush { rev { force false } } {
-
-    set args [list origin $rev]
-    if { $force } { set args [linsert $args 1 "--force"] }
-    logInfo "git push $args"
-
-    # A successful push may still result in a non-zero return
-    if { [catch { eval exec git push $args } res] } {
-        foreach { line} [split $res "\n"] {
-            if { [string match "error: *" $line] || [string match "fatal: *" $line]  } {
-                error $res
-            }
-        }
-        logInfo $res
-    }
-}
-
-proc gitTag { tagName } {
-    exec git tag -a $tagName -m "\[fuse-cid] $tagName"
-}
-
-proc logDebug { msg } {
-    log 4 $msg
-}
-
-proc logInfo { msg } {
-    log 3 $msg
-}
-
-proc logWarn { msg } {
-    log 2 $msg
-}
-
-proc logError { msg } {
-    log 1 $msg
-}
-
-proc log { level msg } {
-    variable argv
-
-    set debugPrefix [dict create 4 "Debug: " 3 "" 2 "Warn: " 1 "Error: "]
-    set maxLevel [string tolower [expr { [dict exists $argv "-debug"] ? [dict get $argv "-debug"] : 3 }]]
-
-    if { $level <= $maxLevel } {
-
-        # Process leading white space
-        set trim [string trim $msg]
-        set idx [string first $trim $msg]
-        if { $idx > 0 } {
-            puts -nonewline [string range $msg 0 [expr { $idx -1 }]]
-            set msg [string range $msg $idx end]
-        }
-
-        puts "[dict get $debugPrefix $level]$msg"
-    }
 }
 
 proc selectNodes { xml path } {
@@ -535,6 +375,10 @@ proc config2json { dict {level 0} }  {
 # Main ========================
 
 if { [string match "*/config.tcl" $argv0] } {
+    
+    set scriptDir [file dirname [info script]]
+    source $scriptDir/common.tcl
+    
     configMain $argv
 }
 

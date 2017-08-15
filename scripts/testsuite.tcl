@@ -246,7 +246,7 @@ proc resetProject { projId vcsUrl vcsRef offset branches } {
         } else {
             catch { exec git reset --hard "master" }
         }
-        gitPush $branch true
+        gitPush origin $branch true
     }
 }
 
@@ -255,6 +255,7 @@ proc resetProject { projId vcsUrl vcsRef offset branches } {
 if { [string match "*/testsuite.tcl" $argv0] } {
 
     set scriptDir [file dirname [info script]]
+    source $scriptDir/common.tcl
     source $scriptDir/config.tcl
     source $scriptDir/release.tcl
 
