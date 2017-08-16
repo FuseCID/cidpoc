@@ -53,20 +53,20 @@ proc gitHash { rev } {
     return [exec git log -n 1 --pretty=%h $rev]
 }
 
-proc gitSubject { rev } {
-    return [exec git log -n 1 --pretty=%s $rev]
-}
-
 proc gitIsReachable { target from } {
     if { [gitHash $target] eq [gitHash $from] } {
         return 1
     }
-    set revs [split [exec git rev-list --reverse $target..$from]]
+    set revs [split [exec git rev-list $target^..$from]]
     if { [llength $revs] < 1 } {
         return 0
     }
-    set rev [lindex $revs 0]
-    return [expr { [gitHash $target] eq [gitHash $rev^] }]
+    foreach { rev } $revs {
+        if { [gitHash $target] eq [gitHash $rev] } {
+            return true
+        }
+    }
+    return false
 }
 
 proc gitLastAvailableTag { version } {
@@ -143,6 +143,10 @@ proc gitRemoteName { vcsUrl } {
 
 proc gitRemoteRemove { name } {
     exec git remote remove $name
+}
+
+proc gitSubject { rev } {
+    return [exec git log -n 1 --pretty=%s $rev]
 }
 
 proc gitTag { tagName } {

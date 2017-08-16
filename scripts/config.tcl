@@ -67,9 +67,9 @@ proc verifyConfig { config } {
 
             gitCheckout $projId $vcsBranch
 
-            logDebug "Check whether master branch of $projId is reachable from $vcsBranch"
+            logDebug "Check whether branch $vcsMasterBranch of $projId is reachable from $vcsBranch"
             if { ![gitIsReachable "origin/$vcsMasterBranch" $vcsBranch] } {
-                lappend problems "Master branch of $projId not reachable from $vcsBranch"
+                lappend problems "Branch $vcsMasterBranch of $projId not reachable from $vcsBranch"
             }
 
             # for each dependency get the pomVersion
